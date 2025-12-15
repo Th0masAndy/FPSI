@@ -837,6 +837,11 @@ int main(int argc, char **argv)
 
     if (type == 0) {
         if (lp != 0) {
+            if (cmd.isSet("prefix")) {
+                fuzzyPsiLowLpPrefix(cmd);
+            } else {
+                cout << "not available yet" << endl;
+            }
         } else {
             if (cmd.isSet("prefix")) {
                 fuzzyPsiLowPrefix(cmd);
