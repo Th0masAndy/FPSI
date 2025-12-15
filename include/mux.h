@@ -23,6 +23,8 @@ public:
 
     void muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0, u64 len);
 
+    void mux(std::vector<block> &u0, std::vector<block> &res0, u64 len);
+
     uint64_t num;
 
 private:
@@ -41,6 +43,8 @@ public:
 
     void mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1, u64 len);
     void muxA(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1, u64 len);
+
+    void mux(std::vector<block> &u0, std::vector<block> &res0, u64 len);
 
     uint64_t num;
 

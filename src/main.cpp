@@ -27,7 +27,7 @@
 #include "cryptoTools/Common/CLP.h"
 #include "eq.h"
 #include "fmap.h"
-#include "fmap_prefix.h"
+#include "fpsi_low.h"
 #include "libOTe/TwoChooseOne/Iknp/IknpOtExtReceiver.h"
 #include "libOTe/TwoChooseOne/Iknp/IknpOtExtSender.h"
 #include "mul.h"
@@ -833,18 +833,30 @@ int main(int argc, char **argv)
     // eq_test();
 
     int lp = cmd.getOr("p", 0);
+    int type = cmd.getOr("type", 0); // low 0, high 1
 
-    if (lp != 0) {
-        if (cmd.isSet("prefix")) {
-            fuzzyPsiLpPrefix(cmd);
+    if (type == 0) {
+        if (lp != 0) {
         } else {
-            fuzzyPsiLp(cmd);
+            if (cmd.isSet("prefix")) {
+                fuzzyPsiLowPrefix(cmd);
+            } else {
+                fuzzyPsiLow(cmd);
+            }
         }
     } else {
-        if (cmd.isSet("prefix")) {
-            fuzzyPsiPrefix(cmd);
+        if (lp != 0) {
+            if (cmd.isSet("prefix")) {
+                fuzzyPsiLpPrefix(cmd);
+            } else {
+                fuzzyPsiLp(cmd);
+            }
         } else {
-            fuzzyPsi(cmd);
+            if (cmd.isSet("prefix")) {
+                fuzzyPsiPrefix(cmd);
+            } else {
+                fuzzyPsi(cmd);
+            }
         }
     }
 

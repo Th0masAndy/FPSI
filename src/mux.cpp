@@ -141,6 +141,35 @@ void MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<
     }
 }
 
+void MuxSender::mux(std::vector<block> &u0, std::vector<block> &res0, u64 len)
+{
+    BitVector b0(u0.size());
+    ssPEQT(1, u0, b0, *socket, 1);
+
+    u64 outputLen = u0.size() / len;
+    BitVector b0_sum(outputLen);
+    for (u64 i = 0; i < outputLen; i++) {
+        b0_sum[i] = false;
+        for (u64 j = 0; j < len; j++) {
+            b0_sum[i] = b0_sum[i] ^ b0[i * len + j];
+        }
+    }
+
+    for (u64 i = 0; i < outputLen; i++) {
+        b0_sum[i] = b0_sum[i] ^ 1;
+    }
+
+    std::vector<block> message(outputLen);
+    std::vector<std::array<block, 2>> messages(outputLen);
+
+    coproto::sync_wait(recver->receive(b0_sum, message, *prng, *socket));
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    for (u64 i = 0; i < outputLen; i++) {
+        res0[i] = res0[i] ^ message[i] ^ (b0_sum[i] ? messages[i][0] : messages[i][1]);
+    }
+}
+
 BitVector MuxSender::muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0)
 {
     auto curr_comm = socket->bytesReceived() + socket->bytesSent();
@@ -287,6 +316,31 @@ void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<
         for (u64 j = 0; j < len; j++) {
             res1[i] = res1[i] ^ temp[i * len + j];
         }
+        res1[i] = res1[i] ^ message[i] ^ (b1_sum[i] ? messages[i][0] : messages[i][1]);
+    }
+}
+
+void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &res1, u64 len)
+{
+    BitVector b1(u1.size());
+    ssPEQT(0, u1, b1, *socket, 1);
+
+    u64 outputLen = u1.size() / len;
+    BitVector b1_sum(outputLen);
+    for (u64 i = 0; i < outputLen; i++) {
+        b1_sum[i] = false;
+        for (u64 j = 0; j < len; j++) {
+            b1_sum[i] = b1_sum[i] ^ b1[i * len + j];
+        }
+    }
+
+    std::vector<block> message(outputLen);
+    std::vector<std::array<block, 2>> messages(outputLen);
+
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+    coproto::sync_wait(recver->receive(b1_sum, message, *prng, *socket));
+
+    for (u64 i = 0; i < outputLen; i++) {
         res1[i] = res1[i] ^ message[i] ^ (b1_sum[i] ? messages[i][0] : messages[i][1]);
     }
 }
