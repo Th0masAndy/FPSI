@@ -40,6 +40,8 @@ using namespace secJoin;
 
 std::map<std::string, TimerStat> timers;
 
+bool LOG = false;
+
 void AltModWPrf_proto_bench(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
@@ -834,6 +836,8 @@ int main(int argc, char **argv)
 
     int lp = cmd.getOr("p", 0);
     int type = cmd.getOr("type", 0); // low 0, high 1
+    int assumption = cmd.getOr("assumption", 0); // 0: 2delta, 1: 4delta
+    LOG = cmd.getOr("v", 0);
 
     if (type == 0) {
         if (lp != 0) {
@@ -844,9 +848,18 @@ int main(int argc, char **argv)
             }
         } else {
             if (cmd.isSet("prefix")) {
-                fuzzyPsiLowPrefix(cmd);
+                if (assumption == 0) {
+                    fuzzyPsiLow2DeltaPx(cmd);
+                } else {
+                    fuzzyPsiLowPrefix(cmd);
+                }
             } else {
-                fuzzyPsiLow(cmd);
+                if (assumption == 0) {
+                    fuzzyPsiLow2Delta(cmd);
+
+                } else {
+                    fuzzyPsiLow(cmd);
+                }
             }
         }
     } else {

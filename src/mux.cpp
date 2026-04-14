@@ -71,6 +71,7 @@ MuxSender::MuxSender(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 MuxSender::~MuxSender()
 {
     delete sender;
+    delete recver;
     delete prng;
 }
 
@@ -155,9 +156,9 @@ void MuxSender::mux(std::vector<block> &u0, std::vector<block> &res0, u64 len)
         }
     }
 
-    for (u64 i = 0; i < outputLen; i++) {
-        b0_sum[i] = b0_sum[i] ^ 1;
-    }
+    // for (u64 i = 0; i < outputLen; i++) {
+    //     b0_sum[i] = b0_sum[i] ^ 1;
+    // }
 
     std::vector<block> message(outputLen);
     std::vector<std::array<block, 2>> messages(outputLen);
@@ -254,6 +255,7 @@ MuxRecver::MuxRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 
 MuxRecver::~MuxRecver()
 {
+    delete sender;
     delete recver;
     delete prng;
 }

@@ -369,8 +369,6 @@ void fuzzyPsi(const oc::CLP &cmd)
 
         // fmap finish
         time.setTimePoint("fmap done");
-        // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " <<
-        // std::endl;
 
         std::vector<u8> choiceBit(n, 0);
 
