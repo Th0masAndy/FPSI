@@ -39,7 +39,16 @@ void SoOPPRFSender::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
         std::cout << "OKVS size: " << encoding.size() * sizeof(block) / 1024.0 / 1024.0 << " MB " << std::endl;
     }
 
-    coproto::sync_wait(socket->send(encoding));
+    if (encoding.size() <= (1 << 26)) {
+        coproto::sync_wait(socket->send(encoding));
+    } else {
+        std::vector<oc::block> tmp;
+        for (u64 i = 0; i < encoding.size(); i += (1 << 26)) {
+            u64 len = std::min<u64>((u64)encoding.size() - i, (1 << 26));
+            tmp.assign(encoding.begin() + i, encoding.begin() + i + len);
+            coproto::sync_wait(socket->send(tmp));
+        }
+    }
 }
 
 void SoOPPRFSender::OPPRF(std::vector<oc::block> encoding, std::vector<oc::block> &y0)
@@ -75,7 +84,17 @@ void SoOPPRFRecver::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
 
     std::vector<oc::block> encoding(okvs->size());
 
-    coproto::sync_wait(socket->recv(encoding));
+    if (encoding.size() <= (1 << 26)) {
+        coproto::sync_wait(socket->recv(encoding));
+    } else {
+        std::vector<oc::block> tmp;
+        for (u64 i = 0; i < encoding.size(); i += (1 << 26)) {
+            u64 len = std::min<u64>((u64)encoding.size() - i, (1 << 26));
+            tmp.assign(encoding.begin() + i, encoding.begin() + i + len);
+            coproto::sync_wait(socket->recv(tmp));
+            std::copy(tmp.begin(), tmp.end(), encoding.begin() + i);
+        }
+    }
 
     auto d = okvs->decode(encoding, keys);
 

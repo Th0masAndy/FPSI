@@ -16,7 +16,6 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
-#include "Defines.h"
 #include "OkvrReceiver.h"
 #include "OkvrSender.h"
 #include "SiOPRF.h"
@@ -37,8 +36,6 @@
 #include "utils.h"
 
 using namespace secJoin;
-
-std::map<std::string, TimerStat> timers;
 
 bool LOG = false;
 
@@ -825,57 +822,46 @@ int main(int argc, char **argv)
 
     // int cnt = 0;
 
-    // for (int i = 0; i < 1; i++) {
-    //     if (AltModWPrf_shared_test(cmd))
-    //         cnt++;
-    // }
-
     // std::cout << "pass rate: " << cnt / 10000.0 << std::endl;
 
     // eq_test();
 
-    int lp = cmd.getOr("p", 0);
-    int type = cmd.getOr("type", 0); // low 0, high 1
-    int assumption = cmd.getOr("assumption", 0); // 0: 2delta, 1: 4delta
+    // Dispatch parameters:
+    //   type       : 0 = low communication, 1 = high communication
+    //   lp         : 0 = L_infinity norm,   non-zero = L_p norm
+    //   prefix     : flag, enables prefix optimization
+    //   assumption : 0 = 2delta,            1 = 4delta   (only used when type=low, lp=L_inf)
+    const int type = cmd.getOr("type", 0);
+    const int lp = cmd.getOr("p", 0);
+    const int assumption = cmd.getOr("assumption", 0);
+    const bool prefix = cmd.isSet("prefix");
     LOG = cmd.getOr("v", 0);
 
-    if (type == 0) {
-        if (lp != 0) {
-            if (cmd.isSet("prefix")) {
-                fuzzyPsiLowLpPrefix(cmd);
-            } else {
-                cout << "not available yet" << endl;
-            }
-        } else {
-            if (cmd.isSet("prefix")) {
-                if (assumption == 0) {
-                    fuzzyPsiLow2DeltaPx(cmd);
-                } else {
-                    fuzzyPsiLowPrefix(cmd);
-                }
-            } else {
-                if (assumption == 0) {
-                    fuzzyPsiLow2Delta(cmd);
+    const bool is_low = (type == 0);
+    const bool is_linf = (lp == 0);
+    const bool is_2delta = (assumption == 0);
 
-                } else {
-                    fuzzyPsiLow(cmd);
-                }
-            }
-        }
-    } else {
-        if (lp != 0) {
-            if (cmd.isSet("prefix")) {
-                fuzzyPsiLpPrefix(cmd);
-            } else {
-                fuzzyPsiLp(cmd);
-            }
+    if (is_low && is_linf) {
+        // L_infinity: choose between 2delta / 4delta assumption
+        if (is_2delta) {
+            prefix ? fuzzyPsiLow2DeltaPx(cmd) : fuzzyPsiLow2Delta(cmd);
         } else {
-            if (cmd.isSet("prefix")) {
-                fuzzyPsiPrefix(cmd);
-            } else {
-                fuzzyPsi(cmd);
-            }
+            prefix ? fuzzyPsiLow4DeltaPx(cmd) : fuzzyPsiLow4Delta(cmd);
         }
+    } else if (is_low && !is_linf) {
+        // L_p
+        if (is_2delta) {
+            return 0;
+        } else {
+            prefix ? fuzzyPsiLow4DeltaLpPxAug(cmd) : fuzzyPsiLow4DeltaLp(cmd);
+            // prefix ? fuzzyPsiLow4DeltaLpPx(cmd) : fuzzyPsiLow4DeltaLp(cmd); // naive version of S&P 26
+        }
+    } else if (!is_low && is_linf) {
+        // L_infinity
+        prefix ? fuzzyPsiPrefix(cmd) : fuzzyPsi(cmd);
+    } else {
+        // L_p
+        prefix ? fuzzyPsiLpPrefix(cmd) : fuzzyPsiLp(cmd);
     }
 
     return 0;

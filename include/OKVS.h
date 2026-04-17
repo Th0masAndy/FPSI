@@ -5,10 +5,8 @@
 #include <cstring>
 #include <map>
 #include <vector>
-#include "Defines.h"
-#include "Paxos.h"
+#include "volePSI/Paxos.h"
 using namespace oc;
-using namespace Okvs;
 using namespace osuCrypto;
 using namespace std;
 
@@ -23,8 +21,8 @@ public:
     u64 size();
 
 private:
-    Baxos paxos;
-    PaxosParam param;
+    volePSI::Baxos paxos;
+    volePSI::PaxosParam param;
 };
 
 // A sparse OKVS based on Paxos, including encoding, decoding, and computing sparse index.
@@ -57,6 +55,6 @@ public:
     u64 sizeOfDense();
 
 private:
-    Baxos paxos;
-    PaxosParam param;
+    volePSI::Baxos paxos;
+    volePSI::PaxosParam param;
 };

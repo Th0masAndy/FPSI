@@ -6,7 +6,6 @@
 #include <iostream>
 #include <thread>
 #include <vector>
-#include "Defines.h"
 #include "OKVS.h"
 #include "SiOPRF.h"
 #include "SoOPPRF.h"
@@ -657,8 +656,8 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     comm /= numTry;
 
     std::cout << std::format(
-                     "[ours-prefix]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                     "{:^10.3f}",
+                     "[ours-prefix]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
                      d,
                      delta,
                      n,
@@ -1412,8 +1411,8 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
 
     if (lp == 1) {
         std::cout << std::format(
-                         "[ours-prefix]    L1    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                         "{:^10.3f}",
+                         "[ours-prefix]    L1    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                         "{:^10.2f}",
                          d,
                          delta,
                          n,
@@ -1422,8 +1421,8 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
                   << std::endl;
     } else {
         std::cout << std::format(
-                         "[ours-prefix]    L2    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                         "{:^10.3f}",
+                         "[ours-prefix]    L2    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                         "{:^10.2f}",
                          d,
                          delta,
                          n,

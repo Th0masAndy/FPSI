@@ -2,11 +2,10 @@
 #include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/Timer.h>
 #include <vector>
-#include "Defines.h"
 
 OKVS::OKVS(u64 numItems, u64 weight_, u64 ssp, u64 binSize_)
 {
-    paxos.init(numItems, binSize_, weight_, ssp, PaxosParam::GF128, oc::ZeroBlock);
+    paxos.init(numItems, binSize_, weight_, ssp, volePSI::PaxosParam::GF128, oc::ZeroBlock);
     param = paxos.mPaxosParam;
 }
 
@@ -36,78 +35,78 @@ u64 OKVS::size()
     return paxos.size();
 }
 
-SparseOKVS::SparseOKVS(u64 numItems, u64 weight_, u64 ssp, u64 binSize_) : weight(weight_), binSize(binSize_)
-{
-    paxos.init(numItems, binSize_, weight_, ssp, PaxosParam::GF128, oc::ZeroBlock);
-    param = paxos.mPaxosParam;
-    binNum = paxos.mNumBins;
-    sparseSize = param.mSparseSize;
-    denseSize = param.mDenseSize;
-}
+// SparseOKVS::SparseOKVS(u64 numItems, u64 weight_, u64 ssp, u64 binSize_) : weight(weight_), binSize(binSize_)
+// {
+//     paxos.init(numItems, binSize_, weight_, ssp, volePSI::PaxosParam::GF128, oc::ZeroBlock);
+//     param = paxos.mPaxosParam;
+//     binNum = paxos.mNumBins;
+//     sparseSize = param.mSparseSize;
+//     denseSize = param.mDenseSize;
+// }
 
-void SparseOKVS::encode(vector<block> &keys, vector<block> &values, vector<block> &E_s, vector<block> &E_d, u64 numThreads)
-{
-    vector<block> E(paxos.size());
+// void SparseOKVS::encode(vector<block> &keys, vector<block> &values, vector<block> &E_s, vector<block> &E_d, u64 numThreads)
+// {
+//     vector<block> E(paxos.size());
 
-    if (keys.size() != values.size())
-        throw RTE_LOC;
+//     if (keys.size() != values.size())
+//         throw RTE_LOC;
 
-    paxos.solve<block>(keys, values, E, nullptr, numThreads);
+//     paxos.solve<block>(keys, values, E, nullptr, numThreads);
 
-    // split E into sparse and dense part.
-    getSparse(E, E_s);
-    getDense(E, E_d);
-}
+//     // split E into sparse and dense part.
+//     getSparse(E, E_s);
+//     getDense(E, E_d);
+// }
 
-void SparseOKVS::computeIndex(vector<block> &keys, vector<block> &hashs, vector<vector<u64>> &idxs, u64 numThreads)
-{
-    if (keys.size() != hashs.size() || keys.size() != idxs.size())
-        throw RTE_LOC;
-    if (idxs[0].size() != weight + 1)
-        throw RTE_LOC;
+// void SparseOKVS::computeIndex(vector<block> &keys, vector<block> &hashs, vector<vector<u64>> &idxs, u64 numThreads)
+// {
+//     if (keys.size() != hashs.size() || keys.size() != idxs.size())
+//         throw RTE_LOC;
+//     if (idxs[0].size() != weight + 1)
+//         throw RTE_LOC;
 
-    paxos.computeRetrievalIdx<block>(keys, hashs, idxs, numThreads);
-}
+//     paxos.computeRetrievalIdx<block>(keys, hashs, idxs, numThreads);
+// }
 
-void SparseOKVS::decode(vector<block> &hashs, vector<vector<u64>> &idxs, vector<block> &values, vector<std::map<u64, block>> &E, u64 numThreads)
-{
-    paxos.decodeRetrievalIdx<block>(hashs, idxs, values, E, numThreads);
-}
+// void SparseOKVS::decode(vector<block> &hashs, vector<vector<u64>> &idxs, vector<block> &values, vector<std::map<u64, block>> &E, u64 numThreads)
+// {
+//     paxos.decodeRetrievalIdx<block>(hashs, idxs, values, E, numThreads);
+// }
 
-void SparseOKVS::getSparse(vector<block> &E, vector<block> &E_s)
-{
-    E_s.resize(binNum * sparseSize);
-    for (u64 b = 0; b < binNum; ++b) {
-        for (u64 j = 0; j < sparseSize; ++j) {
-            E_s[b * sparseSize + j] = E[b * (sparseSize + denseSize) + j];
-        }
-    }
-}
+// void SparseOKVS::getSparse(vector<block> &E, vector<block> &E_s)
+// {
+//     E_s.resize(binNum * sparseSize);
+//     for (u64 b = 0; b < binNum; ++b) {
+//         for (u64 j = 0; j < sparseSize; ++j) {
+//             E_s[b * sparseSize + j] = E[b * (sparseSize + denseSize) + j];
+//         }
+//     }
+// }
 
-void SparseOKVS::getDense(vector<block> &E, vector<block> &E_d)
-{
-    E_d.resize(binNum * denseSize);
-    for (u64 b = 0; b < binNum; ++b) {
-        for (u64 j = 0; j < denseSize; ++j) {
-            E_d[b * denseSize + j] = E[b * (sparseSize + denseSize) + sparseSize + j];
-        }
-    }
-}
+// void SparseOKVS::getDense(vector<block> &E, vector<block> &E_d)
+// {
+//     E_d.resize(binNum * denseSize);
+//     for (u64 b = 0; b < binNum; ++b) {
+//         for (u64 j = 0; j < denseSize; ++j) {
+//             E_d[b * denseSize + j] = E[b * (sparseSize + denseSize) + sparseSize + j];
+//         }
+//     }
+// }
 
-u64 SparseOKVS::size()
-{
-    return paxos.size();
-}
+// u64 SparseOKVS::size()
+// {
+//     return paxos.size();
+// }
 
-u64 SparseOKVS::sizeOfSparse()
-{
-    return binNum * sparseSize;
-}
+// u64 SparseOKVS::sizeOfSparse()
+// {
+//     return binNum * sparseSize;
+// }
 
-u64 SparseOKVS::sizeOfDense()
-{
-    return binNum * denseSize;
-}
+// u64 SparseOKVS::sizeOfDense()
+// {
+//     return binNum * denseSize;
+// }
 
 // void perfBaxos(oc::CLP &cmd)
 // {

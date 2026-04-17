@@ -8,9 +8,10 @@
 #include <iostream>
 #include <thread>
 #include <vector>
-#include "Defines.h"
 #include "OKVS.h"
 #include "SoOPPRF.h"
+#include "b2a.h"
+#include "common.h"
 #include "eq.h"
 #include "math.h"
 #include "mux.h"
@@ -20,7 +21,6 @@
 
 void preProcess(std::vector<std::vector<u64>> &inputs, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
 {
-    PRNG prng(oc::sysRandomSeed());
     int d = inputs[0].size();
     for (size_t i = 0; i < inputs.size(); i++) {
         auto neighbors = neigh(inputs[i], delta);
@@ -312,8 +312,8 @@ void fuzzyPsiLow2Delta(const oc::CLP &cmd)
     comm /= numTry;
 
     std::cout << std::format(
-                     "[2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                     "{:^10.3f}",
+                     "[2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
                      d,
                      delta,
                      n,
@@ -598,8 +598,8 @@ void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd)
     comm /= numTry;
 
     std::cout << std::format(
-                     "[ours-low-2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                     "{:^10.3f}",
+                     "[ours-low-2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
                      d,
                      delta,
                      n,
@@ -608,7 +608,7 @@ void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd)
               << std::endl;
 }
 
-void fuzzyPsiLow(const oc::CLP &cmd)
+void fuzzyPsiLow4Delta(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -621,13 +621,7 @@ void fuzzyPsiLow(const oc::CLP &cmd)
 
     PRNG prng(sysRandomSeed());
     std::vector<std::vector<u64>> recvSet;
-    std::vector<block> recvListKey;
-    std::vector<block> recvListVal;
-    std::vector<block> rand_R(n);
     std::vector<std::vector<u64>> sendSet;
-    std::vector<block> sendListKey;
-    std::vector<block> sendListVal;
-    std::vector<block> rand_S(n);
 
     for (u64 i = 0; i < n; i++) {
         std::vector<u64> tmp;
@@ -662,7 +656,7 @@ void fuzzyPsiLow(const oc::CLP &cmd)
         }
     }
 
-    auto preOKVS = OKVS(n * d * (1 << d) * (2 * delta + 1));
+    // auto preOKVS = OKVS(n * d * (1 << d) * (2 * delta + 1));
     AltModPrf::KeyType senderKey = AltModPrf::KeyType({
         block(0, 1),
         block(0, 2),
@@ -676,29 +670,37 @@ void fuzzyPsiLow(const oc::CLP &cmd)
 
     time.setTimePoint("begin");
 
-    preProcess(recvSet, recvListKey, recvListVal, delta);
+    // std::vector<block> recverPrfVals(recvListKey.size());
+    // prf.eval(recvListKey, recverPrfVals);
+    // for (size_t i = 0; i < sendListKey.size(); i++) {
+    //     recvListVal[i] = recvListVal[i] ^ recverPrfVals[i];
+    // }
 
-    std::vector<block> recverPrfVals(recvListKey.size());
-    prf.eval(recvListKey, recverPrfVals);
-    for (size_t i = 0; i < sendListKey.size(); i++) {
-        recvListVal[i] = recvListVal[i] ^ recverPrfVals[i];
-    }
-
-    auto recverOKVS = preOKVS.encode(recvListKey, recvListVal);
+    // auto recverOKVS = preOKVS.encode(recvListKey, recvListVal);
 
     auto sock = coproto::AsioSocket::makePair();
-
-    std::vector<block> e_S(n * d);
-    std::vector<block> e_R(n * d);
 
     auto s = time.setTimePoint("preprocess done");
 
     for (int trial = 0; trial < numTry; trial++) {
+        std::vector<block> sendListKey;
+        std::vector<block> sendListVal;
+        std::vector<block> rand_S(n);
+
+        std::vector<block> recvListKey;
+        std::vector<block> recvListVal;
+        std::vector<block> rand_R(n);
+
+        std::vector<block> e_S(n * d);
+        std::vector<block> e_R(n * d);
+
         std::thread recvOPPRF([&] {
+            preProcess(recvSet, recvListKey, recvListVal, delta);
+
             SoOPPRFSender send(n * d, (1 << d) * d * n * (2 * delta + 1), 1, false, &sock[0]);
 
-            // send.OPPRF(recvListKey, recvListVal, rand_R);
-            send.OPPRF(recverOKVS, e_R);
+            send.OPPRF(recvListKey, recvListVal, e_R);
+            // send.OPPRF(recverOKVS, e_R);
 
             for (u64 i = 0; i < n; i++) {
                 for (u64 j = 0; j < d; j++) {
@@ -839,8 +841,253 @@ void fuzzyPsiLow(const oc::CLP &cmd)
     comm /= numTry;
 
     std::cout << std::format(
-                     "[ours-low]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                     "{:^10.3f}",
+                     "[ours-low]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
+                     d,
+                     delta,
+                     n,
+                     comm,
+                     comp)
+              << std::endl;
+}
+
+void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd)
+{
+    u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+    size_t d = cmd.getOr("d", 2);
+    int delta = cmd.getOr("delta", 2);
+    int verbose = cmd.getOr("v", 0);
+
+    int numTry = cmd.getOr("try", 1);
+
+    int interSize = cmd.getOr("nn", 4);
+
+    int lp = cmd.getOr("p", 2);
+    u64 delta_p = std::pow(delta, lp);
+    int prefixLen = static_cast<int>(std::ceil(std::log2(delta_p + 1)));
+
+    PRNG prng(sysRandomSeed());
+    std::vector<std::vector<u64>> recvSet;
+    std::vector<std::vector<u64>> sendSet;
+
+    for (u64 i = 0; i < n; i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
+        }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
+        sendSet.push_back(tmp);
+    }
+
+    for (u64 i = 0; i < n; i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
+        }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
+        recvSet.push_back(tmp);
+    }
+
+    std::vector<u64> interIndices;
+    while (interIndices.size() < interSize) {
+        u64 idx = prng.get<u64>() % n;
+        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
+            interIndices.push_back(idx);
+        }
+    }
+
+    int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
+
+    for (u64 i = 0; i < interSize; i++) {
+        u64 idx = interIndices[i];
+        for (u64 j = 0; j < d; j++) {
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+        }
+    }
+
+    // auto preOKVS = OKVS(n * d * (1 << d) * (2 * delta + 1));
+
+    // fmap start
+    oc::Timer time;
+
+    time.setTimePoint("begin");
+
+    auto sock = coproto::AsioSocket::makePair();
+
+    auto s = time.setTimePoint("preprocess done");
+
+    for (int trial = 0; trial < numTry; trial++) {
+        std::vector<block> sendListKey;
+        std::vector<block> sendListVal;
+        std::vector<u64> rand_S(n);
+        std::vector<u64> rand_S_Arith(n * d);
+
+        std::vector<block> recvListKey;
+        std::vector<block> recvListVal;
+        std::vector<u64> rand_R(n);
+        std::vector<u64> rand_R_Arith(n * d);
+
+        std::vector<block> e_S(n * d);
+        std::vector<block> e_R(n * d);
+
+        std::thread recvOPPRF([&] {
+            // preProcess(recvSet, recvListKey, recvListVal, delta);
+
+            int d = recvSet[0].size();
+            for (size_t i = 0; i < recvSet.size(); i++) {
+                auto neighbors = neigh(recvSet[i], delta);
+                for (int j = 0; j < d; j++) {
+                    for (int t = -delta; t <= delta; t++) {
+                        for (auto neighbor : neighbors) {
+                            recvListKey.push_back(blake3_hash(neighbor, j, recvSet[i][j] + t)); // placeholder
+                            recvListVal.push_back(block(0, std::pow(std::abs(t), lp)));
+                        }
+                    }
+                }
+            }
+
+            SoOPPRFSender send(n * d, (1 << d) * d * n * (2 * delta + 1), 1, false, &sock[0]);
+
+            send.OPPRF(recvListKey, recvListVal, e_R);
+            // send.OPPRF(recverOKVS, e_R);
+
+            // for (u64 i = 0; i < n; i++) {
+            //     for (u64 j = 0; j < d; j++) {
+            //         rand_R[i] ^= e_R[i * d + j];
+            //     }
+            // }
+        });
+
+        std::thread sendOPPRF([&] {
+            SoOPPRFRecver recv(n * d, (1 << d) * d * n * (2 * delta + 1), 1, false, &sock[1]);
+
+            std::vector<block> inputs(n * d);
+            for (u64 i = 0; i < n; i++) {
+                auto cell_id = cell(sendSet[i], 2 * delta);
+                for (u64 j = 0; j < d; j++) {
+                    inputs[i * d + j] = blake3_hash(cell_id, j, sendSet[i][j]);
+                }
+            }
+
+            recv.OPPRF(inputs, e_S);
+
+            // for (u64 i = 0; i < n; i++) {
+            //     for (u64 j = 0; j < d; j++) {
+            //         rand_S[i] ^= e_S[i * d + j];
+            //     }
+            // }
+        });
+
+        sendOPPRF.join();
+        recvOPPRF.join();
+
+        time.setTimePoint("OPPRF done");
+
+        std::thread sendB2A([&] {
+            B2aSender send(n * d, &sock[1]);
+            send.b2a(e_S, rand_S_Arith);
+
+            for (u64 i = 0; i < n; i++) {
+                for (u64 j = 0; j < d; j++) {
+                    rand_S[i] += rand_S_Arith[i * d + j];
+                }
+            }
+        });
+
+        std::thread recvB2A([&] {
+            B2aRecver recv(n * d, &sock[0]);
+            recv.b2a(e_R, rand_R_Arith);
+
+            for (u64 i = 0; i < n; i++) {
+                for (u64 j = 0; j < d; j++) {
+                    rand_R[i] += rand_R_Arith[i * d + j];
+                }
+            }
+        });
+
+        sendB2A.join();
+        recvB2A.join();
+
+        time.setTimePoint("B2A done");
+
+        std::vector<u8> choiceBit(n, 0);
+        std::vector<block> prefixR;
+        std::vector<block> prefixS;
+
+        std::thread sendEQT([&] {
+            for (u64 i = 0; i < n; i++) {
+                auto pre = getIntervalPrefix(0ULL - rand_S[i], delta_p - rand_S[i]);
+                for (auto &p : pre) {
+                    p = p ^ block(i << 32, 0);
+                    prefixS.push_back(p);
+                }
+            }
+            while (prefixS.size() < (n * prefixLen)) {
+                prefixS.push_back(prng.get<block>());
+            }
+
+            PEqTSender eqSend(n * prefixLen, 1, false, &sock[0]);
+
+            eqSend.eq(prefixS);
+        });
+
+        std::thread recvEQT([&] {
+            for (u64 i = 0; i < n; i++) {
+                auto pre = getPrefix(rand_R[i], prefixLen);
+                for (auto &p : pre) {
+                    p = p ^ block(i << 32, 0);
+                    prefixR.push_back(p);
+                }
+            }
+
+            PEqTRecver eqRecv(n * prefixLen, 1, false, &sock[1]);
+
+            std::vector<u64> intersection;
+
+            eqRecv.eq(prefixR, intersection);
+
+            for (auto &v : intersection) {
+                choiceBit[v / prefixLen] = 1;
+            }
+        });
+
+        sendEQT.join();
+        recvEQT.join();
+
+        time.setTimePoint("EQT done");
+
+        std::vector<std::vector<block>> matches;
+
+        transferElements(sendSet, choiceBit, matches, sock);
+
+        if (verbose) {
+            for (int i = 0; i < choiceBit.size(); i++) {
+                if (choiceBit[i]) {
+                    std::cout << "intersection at index " << i << std::endl;
+                }
+                if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
+                    throw runtime_error("false positive in fuzzyPsi");
+                }
+            }
+            std::cout << "All matches found!" << std::endl;
+        }
+    }
+
+    auto e = time.setTimePoint("OT done");
+
+    if (verbose) {
+        std::cout << time << std::endl;
+    }
+
+    auto comm = (sock[0].bytesReceived() + sock[0].bytesSent()) / 1024.0 / 1024.0;
+    auto comp = std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000);
+
+    comp /= numTry;
+    comm /= numTry;
+
+    std::cout << std::format(
+                     "[ours-low-4delta-lp]    Lp    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
                      d,
                      delta,
                      n,

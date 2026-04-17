@@ -4,10 +4,12 @@
 
 using namespace oc;
 
-void fuzzyPsiLowPrefix(const oc::CLP &cmd);
-void fuzzyPsiLow(const oc::CLP &cmd);
+void fuzzyPsiLow4DeltaPx(const oc::CLP &cmd);
+void fuzzyPsiLow4Delta(const oc::CLP &cmd);
 
 void fuzzyPsiLow2Delta(const oc::CLP &cmd);
 void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd);
 
-void fuzzyPsiLowLpPrefix(const oc::CLP &cmd);
+void fuzzyPsiLow4DeltaLpPx(const oc::CLP &cmd);
+void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd);
+void fuzzyPsiLow4DeltaLpPxAug(const oc::CLP &cmd);
