@@ -31,6 +31,47 @@ inline u64 high(oc::block &blk)
     return high64;
 }
 
+inline bool lsb(oc::block &blk)
+{
+    u8 lsb = _mm_extract_epi8(blk, 0) & 1;
+
+    return lsb;
+}
+
+inline int bitlen(int x)
+{ // x & (-x)
+    if (x < 1)
+        return 0;
+    for (int i = 0; i < 32; i++) {
+        int curr = 1 << i;
+        if (curr >= x)
+            return i;
+    }
+    return 0;
+}
+
+inline uint8_t bool_to_uint8(const uint8_t *data, size_t len)
+{
+    if (len != 0)
+        len = (len > 8 ? 8 : len);
+    else
+        len = 8;
+    uint8_t res = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (data[i])
+            res |= (1ULL << i);
+    }
+    return res;
+}
+
+inline void uint8_to_bool(uint8_t *data, uint8_t input, int length)
+{
+    for (int i = 0; i < length; ++i) {
+        data[i] = (input & 1) == 1;
+        input >>= 1;
+    }
+}
+
 // Decompose the interval [start, end] using an improved method in appendix
 inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
 {

@@ -65,7 +65,9 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
     coproto::sync_wait(socket->send(compressedBits));
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    // std::cout << "b2a comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    if (LOG) {
+        std::cout << "b2a comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
 }
 
 B2aRecver::B2aRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)

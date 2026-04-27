@@ -1,4 +1,5 @@
 #include "fpsi_low.h"
+#include <cmath>
 #include <coproto/Socket/AsioSocket.h>
 #include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/block.h>
@@ -14,6 +15,7 @@
 #include "common.h"
 #include "eq.h"
 #include "math.h"
+#include "mul.h"
 #include "mux.h"
 #include "param.h"
 #include "secure-join/Prf/AltModPrf.h"
@@ -503,7 +505,7 @@ void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd)
 
             std::vector<u64> intersection;
             eqRecv.eq(ee_R, intersection);
-            std::cout << "intersection size: " << intersection.size() << std::endl;
+            // std::cout << "intersection size: " << intersection.size() << std::endl;
             for (auto &v : intersection) {
                 choiceBit[v / (1 << d)] = 1;
             }
@@ -600,6 +602,651 @@ void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd)
     std::cout << std::format(
                      "[ours-low-2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
                      "{:^10.2f}",
+                     d,
+                     delta,
+                     n,
+                     comm,
+                     comp)
+              << std::endl;
+}
+
+void fuzzyPsiLow2DeltaLp(const oc::CLP &cmd)
+{
+    u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+    size_t d = cmd.getOr("d", 2);
+    int delta = cmd.getOr("delta", 2);
+    int verbose = cmd.getOr("v", 0);
+
+    int numTry = cmd.getOr("try", 1);
+
+    int interSize = cmd.getOr("inter", cmd.getOr("nn", 4));
+
+    int lp = cmd.getOr("p", 2);
+    u64 delta_p = std::pow(delta, lp);
+    int prefixLen = static_cast<int>(std::ceil(std::log2(delta_p + 1)));
+
+    PRNG prng(sysRandomSeed());
+    std::vector<std::vector<u64>> recvSet;
+    std::vector<block> recvListKey;
+    std::vector<block> recvListVal;
+    std::vector<block> rand_R(n);
+    std::vector<std::vector<u64>> sendSet;
+    std::vector<block> sendListKey;
+    std::vector<block> sendListVal;
+    std::vector<block> rand_S(n);
+
+    for (u64 i = 0; i < n; i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
+        }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
+        sendSet.push_back(tmp);
+    }
+
+    for (u64 i = 0; i < n; i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
+        }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
+        recvSet.push_back(tmp);
+    }
+
+    std::vector<u64> interIndices;
+    while (interIndices.size() < interSize) {
+        u64 idx = prng.get<u64>() % n;
+        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
+            interIndices.push_back(idx);
+        }
+    }
+
+    int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
+
+    for (u64 i = 0; i < interSize; i++) {
+        u64 idx = interIndices[i];
+        for (u64 j = 0; j < d; j++) {
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+        }
+    }
+
+    // auto preOKVS = OKVS(n * d * (2 * delta + 1));
+    AltModPrf::KeyType senderKey = AltModPrf::KeyType({
+        block(0, 1),
+        block(0, 2),
+        block(0, 3),
+        block(0, 4),
+    });
+    AltModPrf prf(senderKey); // local encoding from set, totally offline
+
+    // fmap start
+    oc::Timer time;
+
+    time.setTimePoint("begin");
+
+    {
+        PRNG prng(oc::sysRandomSeed());
+        int d = recvSet[0].size();
+        for (size_t i = 0; i < recvSet.size(); i++) {
+            for (int j = 0; j < d; j++) {
+                for (int t = -delta; t <= delta; t++) {
+                    recvListKey.push_back(blake3_hash(cell(recvSet[i], 2 * delta), j, recvSet[i][j] + t)); // placeholder
+                    recvListVal.push_back(block(0, std::pow(std::abs(t), lp)));
+                }
+            }
+        }
+    }
+
+    auto sock = coproto::AsioSocket::makePair();
+
+    auto s = time.setTimePoint("preprocess done");
+
+    for (int trial = 0; trial < numTry; trial++) {
+        // auto recverOKVS = preOKVS.encode(recvListKey, recvListVal);
+
+        std::vector<block> e_S(n * d * (1 << d));
+        std::vector<block> e_R(n * d * (1 << d));
+
+        std::vector<block> ee_S(n * (1 << d));
+        std::vector<block> ee_R(n * (1 << d));
+
+        std::vector<u64> d_S(n * d * (1 << d));
+        std::vector<u64> d_R(n * d * (1 << d));
+
+        std::vector<u64> dis_S(n * (1 << d));
+        std::vector<u64> dis_R(n * (1 << d));
+
+        std::vector<block> v_S(n * d);
+        std::vector<block> v_R(n * d);
+
+        std::thread recvOPPRF([&] {
+            SoOPPRFSender send(n * d * (1 << d), d * n * (2 * delta + 1), 1, false, &sock[0]);
+
+            send.OPPRF(recvListKey, recvListVal, e_R);
+            // send.OPPRF(recverOKVS, e_R);
+
+            // // aggregate by j
+            // for (u64 i = 0; i < n; i++) {
+            //     for (u64 j = 0; j < d; j++) {
+            //         for (u64 z = 0; z < (1 << d); z++) {
+            //             ee_R[i * (1 << d) + z] += e_R[i * d * (1 << d) + j * (1 << d) + z];
+            //         }
+            //     }
+            // }
+        });
+
+        std::thread sendOPPRF([&] {
+            SoOPPRFRecver recv(n * d * (1 << d), d * n * (2 * delta + 1), 1, false, &sock[1]);
+
+            std::vector<block> inputs(n * d * (1 << d));
+
+            for (u64 i = 0; i < n; i++) {
+                auto neighbors = neigh(sendSet[i], delta);
+                for (u64 j = 0; j < d; j++) {
+                    for (int z = 0; z < (1 << d); z++) {
+                        inputs[i * d * (1 << d) + j * (1 << d) + z] = blake3_hash(neighbors[z], j, sendSet[i][j]);
+                    }
+                }
+            }
+
+            recv.OPPRF(inputs, e_S);
+
+            // // aggregate by j
+            // for (u64 i = 0; i < n; i++) {
+            //     for (u64 j = 0; j < d; j++) {
+            //         for (u64 z = 0; z < (1 << d); z++) {
+            //             ee_S[i * (1 << d) + z] += e_S[i * d * (1 << d) + j * (1 << d) + z];
+            //         }
+            //     }
+            // }
+        });
+
+        sendOPPRF.join();
+        recvOPPRF.join();
+
+        time.setTimePoint("OPPRF done");
+
+        std::thread sendB2A([&] {
+            B2aSender send(n * d * (1 << d), &sock[1]);
+            send.b2a(e_S, d_S);
+
+            // aggregate by j
+            for (u64 i = 0; i < n; i++) {
+                for (u64 j = 0; j < d; j++) {
+                    for (u64 z = 0; z < (1 << d); z++) {
+                        dis_S[i * (1 << d) + z] += d_S[i * d * (1 << d) + j * (1 << d) + z];
+                    }
+                }
+            }
+        });
+
+        std::thread recvB2A([&] {
+            B2aRecver recv(n * d * (1 << d), &sock[0]);
+            recv.b2a(e_R, d_R);
+
+            // aggregate by j
+            for (u64 i = 0; i < n; i++) {
+                for (u64 j = 0; j < d; j++) {
+                    for (u64 z = 0; z < (1 << d); z++) {
+                        dis_R[i * (1 << d) + z] += d_R[i * d * (1 << d) + j * (1 << d) + z];
+                    }
+                }
+            }
+        });
+
+        sendB2A.join();
+        recvB2A.join();
+
+        time.setTimePoint("B2A done");
+
+        std::vector<u8> choiceBit(n, 0);
+        std::vector<block> prefixR;
+        std::vector<block> prefixS;
+
+        std::thread sendEQT([&] {
+            for (u64 i = 0; i < n * (1 << d); i++) {
+                auto pre = getIntervalPrefix(0ULL - dis_S[i], delta_p - dis_S[i]);
+                for (auto &p : pre) {
+                    p = p ^ block(i << 32, 0);
+                    prefixS.push_back(p);
+                }
+            }
+            while (prefixS.size() < (n * (1 << d) * prefixLen)) {
+                prefixS.push_back(prng.get<block>());
+            }
+
+            PEqTSender eqSend(n * (1 << d) * prefixLen, 1, false, &sock[0]);
+
+            eqSend.eq(prefixS);
+        });
+
+        std::thread recvEQT([&] {
+            for (u64 i = 0; i < n * (1 << d); i++) {
+                auto pre = getPrefix(dis_R[i], prefixLen);
+                for (auto &p : pre) {
+                    p = p ^ block(i << 32, 0);
+                    prefixR.push_back(p);
+                }
+            }
+
+            PEqTRecver eqRecv(n * (1 << d) * prefixLen, 1, false, &sock[1]);
+
+            std::vector<u64> intersection;
+
+            eqRecv.eq(prefixR, intersection);
+
+            for (auto &v : intersection) {
+                choiceBit[v / prefixLen / (1 << d)] = 1;
+            }
+        });
+
+        sendEQT.join();
+        recvEQT.join();
+
+        time.setTimePoint("Interval test done");
+
+        std::vector<std::vector<block>> matches;
+
+        transferElements(sendSet, choiceBit, matches, sock);
+
+        time.setTimePoint("OT done");
+
+        if (LOG) {
+            correctCheck(choiceBit, interIndices);
+        }
+    }
+
+    auto e = time.setTimePoint("OT done");
+
+    if (verbose) {
+        std::cout << time << std::endl;
+    }
+
+    auto comm = (sock[0].bytesReceived() + sock[0].bytesSent()) / 1024.0 / 1024.0;
+    auto comp = std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000);
+
+    comp /= numTry;
+    comm /= numTry;
+
+    std::cout << std::format(
+                     "[2delta]    L{:^1}    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
+                     lp,
+                     d,
+                     delta,
+                     n,
+                     comm,
+                     comp)
+              << std::endl;
+}
+
+void fuzzyPsiLow2DeltaLpPx(const oc::CLP &cmd)
+{
+    u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
+    size_t d = cmd.getOr("d", 2);
+    int delta = cmd.getOr("delta", 2);
+    int lp = cmd.getOr("p", 2);
+    u64 delta_p = std::pow(delta, lp);
+
+    int numTry = cmd.getOr("try", 1);
+
+    // int prefixNum = prefixNumMapLow.at(2 * delta);
+    // auto U = prefixLenMapLow.at(2 * delta);
+
+    int prefixLenIfmat = static_cast<int>(std::ceil(std::log2(delta_p + 1)));
+
+    auto U_prime = prefixLenMapLow.at(delta);
+    int prefixLenUpDown = 2 * U_prime.size();
+    int prefixNumUpDown = 2 * prefixNumMapLow.at(delta);
+
+    int interSize = cmd.getOr("nn", 4);
+
+    PRNG prng(sysRandomSeed());
+    std::vector<std::vector<u64>> recvSet;
+    std::vector<block> recvListKey;
+    std::vector<block> recvListVal;
+    std::vector<block> rand_R(n);
+    std::vector<std::vector<u64>> sendSet;
+    std::vector<block> sendListKey;
+    std::vector<block> sendListVal;
+    std::vector<block> rand_S(n);
+
+    for (u64 i = 0; i < n; i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
+        }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
+        sendSet.push_back(tmp);
+    }
+
+    for (u64 i = 0; i < n; i++) {
+        std::vector<u64> tmp;
+        for (u64 j = 0; j < d - 1; j++) {
+            tmp.push_back(prng.get<u64>() + 2 * delta);
+        }
+        tmp.push_back(prng.get<u64>() + 2 * delta); // make sure there are some differences
+        recvSet.push_back(tmp);
+    }
+
+    std::vector<u64> interIndices;
+    while (interIndices.size() < interSize) {
+        u64 idx = prng.get<u64>() % n;
+        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
+            interIndices.push_back(idx);
+        }
+    }
+
+    int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
+
+    for (u64 i = 0; i < interSize; i++) {
+        u64 idx = interIndices[i];
+        for (u64 j = 0; j < d; j++) {
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+        }
+    }
+
+    // fmap start
+    oc::Timer time;
+
+    time.setTimePoint("begin");
+
+    auto sock = coproto::AsioSocket::makePair();
+
+    auto s = time.setTimePoint("preprocess done");
+
+    for (int trial = 0; trial < numTry; trial++) {
+        std::vector<u8> choiceBit(n, 0);
+
+        std::vector<u64> disR(n * (1 << d), 0);
+        std::vector<u64> disS(n * (1 << d), 0);
+
+        std::vector<block> prefixR;
+        std::vector<block> prefixS;
+
+        int halfprefixLen = prefixLenUpDown / 2;
+        int halfprefixNum = prefixNumUpDown / 2;
+
+        std::thread sendFilter([&] {
+            std::vector<block> inputs(n * d * (1 << d) * halfprefixLen * 2);
+
+            {
+                for (int i = 0; i < n; i++) {
+                    auto neighbors = neigh(sendSet[i], delta);
+                    for (int j = 0; j < d; j++) {
+                        auto prefixes = getPrefixSet(sendSet[i][j], U_prime);
+                        for (int z = 0; z < (1 << d); z++) {
+                            for (int s = 0; s < 2; s++) {
+                                for (int k = 0; k < halfprefixLen; k++) {
+                                    auto idx =
+                                        i * d * halfprefixLen * 2 * (1 << d) + j * halfprefixLen * 2 * (1 << d) + z * halfprefixLen * 2 + s * halfprefixLen + k;
+                                    // i, j, z, s, k
+                                    inputs[idx] = blake3_hash(neighbors[z], (j << 8) | (s << 4), prefixes[k]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            SoOPPRFRecver recv(n * d * (1 << d) * 2 * halfprefixLen, n * d * 2 * halfprefixNum, 1, false, &sock[0]);
+
+            std::vector<block> rand_S(n * d * (1 << d) * 2 * halfprefixLen);
+
+            recv.OPPRF(inputs, rand_S);
+
+            std::vector<block> u(n * d * (1 << d) * prefixLenUpDown);
+            std::vector<block> v(n * d * (1 << d) * prefixLenUpDown);
+
+            for (u64 i = 0; i < n * d * (1 << d) * 2 * halfprefixLen; i++) {
+                u[i] = block(0, high(rand_S[i]));
+            }
+            for (u64 i = 0; i < n * d * (1 << d) * 2 * halfprefixLen; i++) {
+                v[i] = block(0, low(rand_S[i]));
+            }
+
+            std::vector<u64> v_A(n * d * (1 << d) * prefixLenUpDown);
+
+            oc::Timer localTime;
+
+            auto start = localTime.setTimePoint("b2a start");
+
+            B2aSender b2aSender(n * d * (1 << d) * prefixLenUpDown, &sock[0]);
+            b2aSender.b2a(v, v_A);
+
+            auto end = localTime.setTimePoint("b2a done");
+
+            auto dt = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / double(1000);
+
+            if (LOG) {
+                std::cout << "b2a time: " << dt << " ms" << std::endl;
+            }
+
+            std::vector<u64> sumDis(n * d * (1 << d) * 2 * halfprefixLen, 0);
+            std::vector<u64> e(n * d * (1 << d) * 2 * halfprefixLen, 0);
+
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < d; j++) {
+                    auto prefixes = getPrefixSet(sendSet[i][j], U_prime);
+                    for (int z = 0; z < (1 << d); z++) {
+                        for (int s = 0; s < 2; s++) {
+                            for (int k = 0; k < halfprefixLen; k++) {
+                                e[i * d * halfprefixLen * 2 * (1 << d) + j * halfprefixLen * 2 * (1 << d) + z * halfprefixLen * 2 + s * halfprefixLen + k] =
+                                    (s == 0) ? upBound(prefixes[k]) - sendSet[i][j] : sendSet[i][j] - upBound(prefixes[k]);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (lp == 1) {
+                for (u64 i = 0; i < n * d * (1 << d) * prefixLenUpDown; i++) {
+                    sumDis[i] = v_A[i] + e[i];
+                }
+            }
+            if (lp == 2) {
+                MulSender mulSender(n * d * (1 << d) * prefixLenUpDown, &sock[0]);
+
+                std::vector<u64> shares(sumDis.size(), 0);
+
+                for (u64 i = 0; i < n * d * (1 << d) * prefixLenUpDown; i++) {
+                    shares[i] = v_A[i] + e[i];
+                }
+
+                std::vector<u64> product(n * d * (1 << d) * prefixLenUpDown, 0);
+
+                mulSender.mul(shares, product);
+
+                for (u64 i = 0; i < n * d * (1 << d) * prefixLenUpDown; i++) {
+                    sumDis[i] = shares[i] * shares[i] + 2 * product[i];
+                }
+            }
+
+            std::vector<u64> rand_i_j(n * d * (1 << d), 0);
+
+            MuxSender mux(n * d * (1 << d) * prefixLenUpDown, &sock[0]);
+            mux.muxA(u, sumDis, rand_i_j, prefixLenUpDown);
+
+            for (u64 i = 0; i < n; i++) {
+                for (u64 j = 0; j < d; j++) {
+                    for (u64 z = 0; z < (1 << d); z++) {
+                        disS[i * (1 << d) + z] += rand_i_j[i * d * (1 << d) + j * (1 << d) + z];
+                    }
+                }
+            }
+
+            for (u64 i = 0; i < n * (1 << d); i++) {
+                auto pre = getIntervalPrefix(0ULL - disS[i], delta_p - disS[i]);
+                for (auto &p : pre) {
+                    p = p ^ block(i << 32, 0);
+                    prefixS.push_back(p);
+                }
+            }
+            while (prefixS.size() != (n * (1 << d) * prefixLenIfmat)) {
+                prefixS.push_back(prng.get<block>());
+            }
+
+            PEqTSender eqSend(n * (1 << d) * prefixLenIfmat, 1, false, &sock[0]);
+
+            eqSend.eq(prefixS);
+        });
+
+        std::thread recvFilter([&] {
+            std::vector<block> filterKey;
+            std::vector<block> filterVal;
+
+            for (int i = 0; i < n; i++) {
+                auto cell_id = cell(recvSet[i], 2 * delta);
+                for (int j = 0; j < d; j++) {
+                    auto prefixes0 = getIntervalPrefixSet(recvSet[i][j] - delta, recvSet[i][j] - 1, U_prime);
+                    auto prefixes1 = getIntervalPrefixSet(recvSet[i][j], recvSet[i][j] + delta, U_prime);
+                    for (auto &p : prefixes0) {
+                        auto upbound = upBound(p);
+                        {
+                            {
+                                block key = blake3_hash(cell_id, (j << 8) | (0 << 4), p);
+                                block val = ZeroBlock;
+
+                                val = block(0, std::pow(recvSet[i][j] - upbound, 0 + 1));
+
+                                filterKey.push_back(key);
+                                filterVal.push_back(val);
+                            }
+                        }
+                    }
+                    for (auto &p : prefixes1) {
+                        auto upbound = upBound(p);
+                        {
+                            {
+                                block key = blake3_hash(cell_id, (j << 8) | (1 << 4), p);
+                                block val = ZeroBlock;
+
+                                val = block(0, std::pow(upbound - recvSet[i][j], 0 + 1));
+
+                                filterKey.push_back(key);
+                                filterVal.push_back(val);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (filterKey.size() > n * d * prefixNumUpDown) {
+                throw std::runtime_error("filterKey size wrong");
+            }
+
+            while (filterKey.size() < n * d * prefixNumUpDown) {
+                filterKey.push_back(prng.get<block>());
+                filterVal.push_back(prng.get<block>());
+            }
+
+            if (filterVal.size() != n * d * prefixNumUpDown) {
+                throw std::runtime_error("filterVal size wrong");
+            }
+
+            SoOPPRFSender send(n * d * (1 << d) * prefixLenUpDown, n * d * prefixNumUpDown, 1, false, &sock[1]);
+
+            std::vector<block> rand_R(n * d * (1 << d) * prefixLenUpDown);
+
+            send.OPPRF(filterKey, filterVal, rand_R);
+
+            std::vector<block> u(n * d * (1 << d) * prefixLenUpDown);
+            std::vector<block> v(n * d * (1 << d) * prefixLenUpDown);
+
+            for (u64 i = 0; i < 1 * n * d * (1 << d) * 2 * halfprefixLen; i++) {
+                u[i] = block(0, high(rand_R[i]));
+            }
+            for (u64 i = 0; i < 1 * n * d * (1 << d) * 2 * halfprefixLen; i++) {
+                v[i] = block(0, low(rand_R[i]));
+            }
+
+            std::vector<u64> v_A(n * d * (1 << d) * prefixLenUpDown);
+
+            B2aRecver b2aRecver(n * d * (1 << d) * prefixLenUpDown, &sock[1]);
+            b2aRecver.b2a(v, v_A);
+
+            std::vector<u64> sumDis(n * d * (1 << d) * prefixLenUpDown, 0);
+
+            if (lp == 1) {
+                for (u64 i = 0; i < n * d * (1 << d) * prefixLenUpDown; i++) {
+                    sumDis[i] = v_A[i];
+                }
+            }
+            if (lp == 2) {
+                MulRecver mulRecver(n * d * (1 << d) * prefixLenUpDown, &sock[1]);
+                std::vector<u64> product(n * d * (1 << d) * prefixLenUpDown, 0);
+
+                mulRecver.mul(v_A, product);
+
+                for (u64 i = 0; i < n * d * (1 << d) * prefixLenUpDown; i++) {
+                    sumDis[i] = 2 * product[i] + v_A[i] * v_A[i];
+                }
+            }
+
+            std::vector<u64> rand_i_j(n * d * (1 << d), 0);
+
+            MuxRecver mux(n * d * (1 << d) * prefixLenUpDown, &sock[1]);
+            mux.muxA(u, sumDis, rand_i_j, prefixLenUpDown);
+
+            for (u64 i = 0; i < n; i++) {
+                for (u64 j = 0; j < d; j++) {
+                    for (u64 z = 0; z < (1 << d); z++) {
+                        disR[i * (1 << d) + z] += rand_i_j[i * d * (1 << d) + j * (1 << d) + z];
+                    }
+                }
+            }
+
+            for (u64 i = 0; i < n * (1 << d); i++) {
+                auto pre = getPrefix(disR[i], prefixLenIfmat);
+                for (auto &p : pre) {
+                    p = p ^ block(i << 32, 0);
+                    prefixR.push_back(p);
+                }
+            }
+
+            PEqTRecver eqRecv(n * (1 << d) * prefixLenIfmat, 1, false, &sock[1]);
+
+            std::vector<u64> intersection;
+
+            eqRecv.eq(prefixR, intersection);
+
+            for (auto &v : intersection) {
+                choiceBit[v / prefixLenIfmat / (1 << d)] = 1;
+            }
+        });
+
+        sendFilter.join();
+        recvFilter.join();
+
+        time.setTimePoint("filter done");
+
+        std::vector<std::vector<block>> matches;
+
+        transferElements(sendSet, choiceBit, matches, sock);
+
+        time.setTimePoint("OT done");
+
+        if (LOG) {
+            correctCheck(choiceBit, interIndices);
+        }
+    }
+
+    auto e = time.setTimePoint("OT done");
+
+    if (LOG) {
+        std::cout << time << std::endl;
+    }
+
+    auto comm = (sock[0].bytesReceived() + sock[0].bytesSent()) / 1024.0 / 1024.0;
+    auto comp = std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000);
+
+    comp /= numTry;
+    comm /= numTry;
+
+    std::cout << std::format(
+                     "[ours-px]    L{:^1}    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
+                     lp,
                      d,
                      delta,
                      n,
@@ -1054,7 +1701,7 @@ void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd)
         sendEQT.join();
         recvEQT.join();
 
-        time.setTimePoint("EQT done");
+        time.setTimePoint("Interval test done");
 
         std::vector<std::vector<block>> matches;
 

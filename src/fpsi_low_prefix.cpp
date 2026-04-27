@@ -802,9 +802,7 @@ void fuzzyPsiLow4DeltaLpPxAug(const oc::CLP &cmd)
     for (u64 i = 0; i < interSize; i++) {
         u64 idx = interIndices[i];
         for (u64 j = 0; j < d; j++) {
-            // recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
-
-            recvSet[idx][j] = sendSet[idx][j] + 2;
+            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
         }
     }
 

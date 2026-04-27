@@ -51,7 +51,9 @@ void MulSender::mul(std::vector<uint64_t> &inputs, std::vector<uint64_t> &val)
     coproto::sync_wait(socket->send(compressedBits));
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    // std::cout << "mul comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    if (LOG) {
+        std::cout << "mul comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
 }
 
 MulRecver::MulRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)
