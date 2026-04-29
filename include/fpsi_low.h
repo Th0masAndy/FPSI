@@ -12,6 +12,9 @@ void fuzzyPsiLow2DeltaLp(const oc::CLP &cmd);
 void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd);
 void fuzzyPsiLow2DeltaLpPx(const oc::CLP &cmd);
 
+void fuzzyPsiLow2DeltaSender(const oc::CLP &cmd);
+void fuzzyPsiLow2DeltaLpSender(const oc::CLP &cmd);
+
 void fuzzyPsiLow4DeltaLpPx(const oc::CLP &cmd);
 void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd);
 void fuzzyPsiLow4DeltaLpPxAug(const oc::CLP &cmd);

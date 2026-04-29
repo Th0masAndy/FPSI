@@ -14,6 +14,7 @@
 #include <volePSI/GMW/Gmw.h>
 #include <volePSI/Paxos.h>
 #include <volePSI/config.h>
+#include "cmp.h"
 #include "utils.h"
 
 void ssPEQT(u32 idx, std::vector<block> &input, BitVector &out, Socket &chl, u32 numThreads)
@@ -110,6 +111,102 @@ BitVector MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::ve
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
     // std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+
+    return b0;
+}
+
+BitVector MuxSender::EqRand(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0)
+{
+    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
+
+    BitVector b0(num);
+    ssPEQT(1, u0, b0, *socket, 1);
+
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v0[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    coproto::sync_wait(recver->receive(b0, res0, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    for (u64 i = 0; i < num; i++) {
+        res0[i] = res0[i] ^ (b0[i] ? correctMessages1[i] : block(0, 0));
+        res0[i] = res0[i] ^ messages[i][0];
+        res0[i] = res0[i] ^ (b0[i] ? v0[i] : block(0, 0));
+    }
+
+    auto end_comm = socket->bytesReceived() + socket->bytesSent();
+
+    if (LOG) {
+        std::cout << "EqRand comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
+
+    return b0;
+}
+
+BitVector MuxSender::CmpRand(std::vector<u64> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 threshold)
+{
+    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
+
+    BitVector b0(num);
+    std::vector<u8> res(num);
+    std::vector<u64> uu0(num);
+
+    for (u64 i = 0; i < num; i++) {
+        uu0[i] = threshold + (0ULL - u0[i]);
+    }
+
+    MillionaireProtocolSender cmp(num, 64);
+    cmp.compare(res.data(), uu0.data(), *socket);
+
+    for (u64 i = 0; i < num; i++) {
+        b0[i] = res[i] & 1;
+    }
+
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v0[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    coproto::sync_wait(recver->receive(b0, res0, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    for (u64 i = 0; i < num; i++) {
+        res0[i] = res0[i] ^ (b0[i] ? correctMessages1[i] : block(0, 0));
+        res0[i] = res0[i] ^ messages[i][0];
+        res0[i] = res0[i] ^ (b0[i] ? v0[i] : block(0, 0));
+    }
+
+    auto end_comm = socket->bytesReceived() + socket->bytesSent();
+
+    if (LOG) {
+        std::cout << "EqRand comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
 
     return b0;
 }
@@ -264,6 +361,82 @@ BitVector MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::ve
 {
     BitVector b1(num);
     ssPEQT(0, u1, b1, *socket, 1);
+
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+
+    coproto::sync_wait(recver->receive(b1, res1, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v1[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    for (u64 i = 0; i < num; i++) {
+        res1[i] = res1[i] ^ (b1[i] ? correctMessages1[i] : block(0, 0));
+        res1[i] = res1[i] ^ messages[i][0];
+        res1[i] = res1[i] ^ (b1[i] ? v1[i] : block(0, 0));
+    }
+
+    return b1;
+}
+
+BitVector MuxRecver::EqRand(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1)
+{
+    BitVector b1(num);
+    ssPEQT(0, u1, b1, *socket, 1);
+
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+
+    coproto::sync_wait(recver->receive(b1, res1, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v1[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    for (u64 i = 0; i < num; i++) {
+        res1[i] = res1[i] ^ (b1[i] ? correctMessages1[i] : block(0, 0));
+        res1[i] = res1[i] ^ messages[i][0];
+        res1[i] = res1[i] ^ (b1[i] ? v1[i] : block(0, 0));
+    }
+
+    return b1;
+}
+
+BitVector MuxRecver::CmpRand(std::vector<u64> &u1, std::vector<block> &v1, std::vector<block> &res1)
+{
+    BitVector b1(num);
+    // ssPEQT(0, u1, b1, *socket, 1);
+
+    std::vector<u8> res(num);
+    MillionaireProtocolRecver cmp(num, 64);
+    cmp.compare(res.data(), u1.data(), *socket);
+
+    for (u64 i = 0; i < num; i++) {
+        b1[i] = res[i] & 1;
+    }
 
     coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
     coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
