@@ -121,9 +121,11 @@ If you make use of our work, please consider citing us:
 
 ```bibtex
 @INPROCEEDINGS{
-    author = { Yang, Xinpeng and Hao, Meng and Weng, Chenkai and Deng, Robert H. and Wen, Yonggang and Zhang, Tianwei },
-    booktitle = { 2026 IEEE Symposium on Security and Privacy (SP) },
-    title = {{ Efficient Fuzzy Private Set Intersection from Secret-shared OPRF }},
-    year = {2026},
+  title={Efficient fuzzy private set intersection from secret-shared OPRF},
+  author={Yang, Xinpeng and Hao, Meng and Weng, Chenkai and Deng, Robert H and Wen, Yonggang and Zhang, Tianwei},
+  booktitle={2026 IEEE Symposium on Security and Privacy (SP)},
+  pages={2442--2461},
+  year={2026},
+  organization={IEEE}
 }
 ```
