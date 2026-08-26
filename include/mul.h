@@ -4,6 +4,8 @@
 #include <libOTe/TwoChooseOne/Silent/SilentOtExtReceiver.h>
 #include <libOTe/TwoChooseOne/Silent/SilentOtExtSender.h>
 
+extern bool LOG;
+
 class MulSender {
 public:
     MulSender(uint64_t num_, coproto::Socket *socket_);

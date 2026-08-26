@@ -26,12 +26,12 @@ find_package(fmt REQUIRED)
 
 target_link_libraries(fpsi PRIVATE oc::cryptoTools oc::libOTe visa::volePSI fmt::fmt)
 target_link_libraries(fpsi PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/out/install/lib/libsecureJoin.a)
-
+target_link_libraries(fpsi PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/out/install/lib/libblake3.a)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
-  target_compile_options(fpsi PRIVATE -mpclmul -maes -msse2 -msse4.1)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|i.86")
+    target_compile_options(fpsi PRIVATE -mpclmul -maes -msse2 -msse4.1)
 endif()
 
 add_definitions(-DNDEBUG)

@@ -391,8 +391,6 @@ void fuzzyPsi(const oc::CLP &cmd)
 
         // fmap finish
         time.setTimePoint("fmap done");
-        // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " <<
-        // std::endl;
 
         std::vector<u8> choiceBit(n, 0);
 
@@ -551,8 +549,8 @@ void fuzzyPsi(const oc::CLP &cmd)
     comm /= numTry;
 
     std::cout << std::format(
-                     "[ours]    L0    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                     "{:^10.3f}",
+                     "[ours]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                     "{:^10.2f}",
                      d,
                      delta,
                      n,
@@ -882,8 +880,8 @@ void fuzzyPsiLp(const oc::CLP &cmd)
 
     if (lp == 1) {
         std::cout << std::format(
-                         "[ours]    L1    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                         "{:^10.3f}",
+                         "[ours]    L1    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                         "{:^10.2f}",
                          d,
                          delta,
                          n,
@@ -892,8 +890,8 @@ void fuzzyPsiLp(const oc::CLP &cmd)
                   << std::endl;
     } else {
         std::cout << std::format(
-                         "[ours]    L2    {:^5}  {:^5}  {:^5}  {:^10.3f} "
-                         "{:^10.3f}",
+                         "[ours]    L2    {:^5}  {:^5}  {:^5}  {:^10.2f} "
+                         "{:^10.2f}",
                          d,
                          delta,
                          n,

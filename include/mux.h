@@ -9,6 +9,8 @@
 using namespace volePSI;
 using namespace osuCrypto;
 
+extern bool LOG;
+
 void ssPEQT(u32 idx, std::vector<block> &input, BitVector &out, Socket &chl, u32 numThreads);
 
 class MuxSender {
@@ -22,6 +24,12 @@ public:
     void mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 len);
 
     void muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0, u64 len);
+
+    void mux(std::vector<block> &u0, std::vector<block> &res0, u64 len);
+
+    BitVector EqRand(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0);
+
+    BitVector CmpRand(std::vector<u64> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 threshold);
 
     uint64_t num;
 
@@ -41,6 +49,12 @@ public:
 
     void mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1, u64 len);
     void muxA(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1, u64 len);
+
+    void mux(std::vector<block> &u0, std::vector<block> &res0, u64 len);
+
+    BitVector EqRand(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1);
+
+    BitVector CmpRand(std::vector<u64> &u1, std::vector<block> &v1, std::vector<block> &res1);
 
     uint64_t num;
 

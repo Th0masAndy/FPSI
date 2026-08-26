@@ -4,6 +4,8 @@
 #include "OKVS.h"
 #include "SoOPRF.h"
 
+extern bool LOG;
+
 class SoOPPRFSender : public SoOPRFSender {
 public:
     SoOPPRFSender(uint64_t num_, uint64_t num_kv_, uint64_t numThreads_, bool useOle_, coproto::Socket *socket_);

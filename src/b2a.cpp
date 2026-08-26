@@ -33,10 +33,11 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
     std::vector<u8> bits(numOts);
 
-    for (int i = 0; i < num; i++) {
+    for (size_t i = 0; i < num; i++) {
         u64 lowbits = low(blk[i]);
         for (int j = 0; j < 64; j++) {
-            bits[i * 64 + j] = (lowbits >> j) & 1;
+            size_t idx = i * 64ULL + j;
+            bits[idx] = (lowbits >> j) & 1;
         }
     }
 
@@ -46,7 +47,7 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
     std::vector<u8> compressedBits;
 
-    for (int i = 0; i < numOts; i++) {
+    for (size_t i = 0; i < numOts; i++) {
         u8 bit = bits[i];
         int shift = i % 64;
         u64 mask = low(messages[i][0]) + u64(bit);
@@ -56,16 +57,29 @@ void B2aSender::b2a(std::vector<block> &blk, std::vector<u64> &val)
         }
     }
 
-    for (int i = 0; i < numOts; i++) {
+    for (size_t i = 0; i < numOts; i++) {
         u8 bit = bits[i];
         int shift = i % 64;
         val[i / 64] += (u64(bit) + 2 * ((low(messages[i][0]) << shift) >> shift)) << shift;
     }
 
-    coproto::sync_wait(socket->send(compressedBits));
+    // coproto::sync_wait(socket->send(compressedBits));
+
+    if (compressedBits.size() <= (1 << 30)) {
+        coproto::sync_wait(socket->send(compressedBits));
+    } else {
+        std::vector<u8> tmp;
+        for (u64 i = 0; i < compressedBits.size(); i += (1 << 30)) {
+            u64 len = std::min<u64>((u64)compressedBits.size() - i, (1 << 30));
+            tmp.assign(compressedBits.begin() + i, compressedBits.begin() + i + len);
+            coproto::sync_wait(socket->send(tmp));
+        }
+    }
 
     auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    // std::cout << "b2a comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    if (LOG) {
+        std::cout << "b2a comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
 }
 
 B2aRecver::B2aRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socket(socket_)
@@ -92,10 +106,11 @@ void B2aRecver::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
     std::vector<u8> bytes(numOts / 8);
 
-    for (int i = 0; i < num; i++) {
+    for (size_t i = 0; i < num; i++) {
         u64 lowbits = low(blk[i]);
         for (int j = 0; j < 8; j++) {
-            bytes[i * 8 + j] = (lowbits >> (8 * j)) & 0xFF;
+            size_t idx = i * 8ULL + j;
+            bytes[idx] = (lowbits >> (8 * j)) & 0xFF;
         }
     }
 
@@ -105,12 +120,24 @@ void B2aRecver::b2a(std::vector<block> &blk, std::vector<u64> &val)
 
     std::vector<u64> correctMessages(numOts);
 
-    std::vector<u8> compressedBits;
+    std::vector<u8> compressedBits(288 * num);
 
-    coproto::sync_wait(socket->recvResize(compressedBits));
+    // coproto::sync_wait(socket->recvResize(compressedBits));
+
+    if (compressedBits.size() <= (1 << 30)) {
+        coproto::sync_wait(socket->recv(compressedBits));
+    } else {
+        std::vector<u8> tmp;
+        for (u64 i = 0; i < compressedBits.size(); i += (1 << 30)) {
+            u64 len = std::min<u64>((u64)compressedBits.size() - i, (1 << 30));
+            tmp.assign(compressedBits.begin() + i, compressedBits.begin() + i + len);
+            coproto::sync_wait(socket->recv(tmp));
+            std::copy(tmp.begin(), tmp.end(), compressedBits.begin() + i);
+        }
+    }
 
     u64 offset = 0;
-    for (int i = 0; i < numOts; i++) {
+    for (size_t i = 0; i < numOts; i++) {
         u64 msg = 0;
         int shift = i % 64;
         for (int j = 0; j < 8 - shift / 8; j++) {

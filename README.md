@@ -1,14 +1,8 @@
-# Efficient Fuzzy Private Set Intersection from Secret-shared OPRF
+# FPSI
+FPSI implements fuzzy matching for two private sets. It includes the two-sided assumption protocol [S\&P'26](https://ieeexplore.ieee.org/abstract/document/11573503) and the one-sided assumption protocol [CCS'26](https://arxiv.org/abs/2608.17770). 
 
-This repository provides the implementation and build scripts for fuzzy private set intersection.
 
 > Note: This project is experimental and primarily intended for research use. Adjust parameters according to your hardware and dataset sizes.
-
-
-## Location of Main Functionality
-- `src/*.cpp` contains the implementations of our building blocks such as `si-OPRF`, `so-OPRF`, `so-OPPRF` and other MPC components
-- `src/fpsi.cpp` contains the implementations of basic `fuzzy mapping`, `fuzzy PSI` protocol
-- `src/fpsi_prefix.cpp` contains the implementations of **prefix-optimized** `fuzzy mapping`, `fuzzy PSI` protocol
 
 ## Requirements
 
@@ -65,25 +59,26 @@ Below are the commonly used command-line flags. Flags use a leading dash (for ex
 | Flag | Meaning | Values / Notes |
 |---|---|---|
 | `-d` | Dimension | integer |
-| `-m` | Metric | `0`: $L_\infty$, `1`: $L_1$, `2`: $L_2$ |
+| `-p` | Metric | `0`: $L_\infty$ (default), `1`: $L_1$, `2`: $L_2$ |
 | `-delta` | Distance threshold (δ) | recommended to be a power of 2 |
 | `-nn` | log2 of input set size (n) | tested values: `8`~`16` |
 | `-v` | Verbosity | `0`: off (default), `1`: info |
 | `-try` | Number of runs | integer, default `1` |
 | `-prefix` | Prefix optimization flag | `0`: off (default), `1`: on |
+| `-assumption` | Assumption | `0`: unique cell, `1`: unique block |
 
 ## Usage Examples
 
 Run a basic fuzzy PSI experiment:
 
 ```bash
-./fpsi -nn 8 -d 8 -delta 16 -v 1
+./fpsi -nn 8 -d 8 -delta 16 -v 1 -assumption 1
 ```
 
 Enable prefix optimization:
 
 ```bash
-./fpsi -nn 8 -d 8 -delta 16 -v 1 -prefix 1
+./fpsi -nn 8 -d 8 -delta 16 -v 1 -prefix -assumption 1
 ```
 
 ------------------------------------------------------------------------
@@ -127,5 +122,12 @@ If you make use of our work, please consider citing us:
   pages={2442--2461},
   year={2026},
   organization={IEEE}
+}
+
+@article{yang2026efficient,
+  title={Efficient Fuzzy PSI under One-Sided Assumptions},
+  author={Yang, Xinpeng and Hao, Meng and Jia, Yanxue and Weng, Chenkai and Wen, Yonggang and Zhang, Tianwei},
+  journal={arXiv preprint arXiv:2608.17770},
+  year={2026}
 }
 ```

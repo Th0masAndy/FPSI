@@ -24,4 +24,14 @@ cp ./out/build/linux/volePSI/config.h ../out/install/include/volePSI
 cd ..
 rm -rf volepsi
 
+## Build BLAKE3
+git clone https://github.com/BLAKE3-team/BLAKE3.git
+cd BLAKE3
+git checkout c7f0d216e6fc834b742456b39546c9835baa1277
+cmake -S c -B c/build -DCMAKE_INSTALL_PREFIX=../out/install
+cmake --build c/build --target install -j
+cd ..
+rm -rf BLAKE3
+
+
 cd ..

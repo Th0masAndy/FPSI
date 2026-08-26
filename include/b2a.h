@@ -8,6 +8,8 @@
 #include <sys/types.h>
 #include <vector>
 
+extern bool LOG;
+
 class B2aSender {
 public:
     B2aSender(uint64_t num_, coproto::Socket *socket_);

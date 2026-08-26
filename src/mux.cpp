@@ -14,6 +14,7 @@
 #include <volePSI/GMW/Gmw.h>
 #include <volePSI/Paxos.h>
 #include <volePSI/config.h>
+#include "cmp.h"
 #include "utils.h"
 
 void ssPEQT(u32 idx, std::vector<block> &input, BitVector &out, Socket &chl, u32 numThreads)
@@ -71,6 +72,7 @@ MuxSender::MuxSender(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 MuxSender::~MuxSender()
 {
     delete sender;
+    delete recver;
     delete prng;
 }
 
@@ -113,6 +115,102 @@ BitVector MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::ve
     return b0;
 }
 
+BitVector MuxSender::EqRand(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0)
+{
+    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
+
+    BitVector b0(num);
+    ssPEQT(1, u0, b0, *socket, 1);
+
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v0[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    coproto::sync_wait(recver->receive(b0, res0, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    for (u64 i = 0; i < num; i++) {
+        res0[i] = res0[i] ^ (b0[i] ? correctMessages1[i] : block(0, 0));
+        res0[i] = res0[i] ^ messages[i][0];
+        res0[i] = res0[i] ^ (b0[i] ? v0[i] : block(0, 0));
+    }
+
+    auto end_comm = socket->bytesReceived() + socket->bytesSent();
+
+    if (LOG) {
+        std::cout << "EqRand comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
+
+    return b0;
+}
+
+BitVector MuxSender::CmpRand(std::vector<u64> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 threshold)
+{
+    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
+
+    BitVector b0(num);
+    std::vector<u8> res(num);
+    std::vector<u64> uu0(num);
+
+    for (u64 i = 0; i < num; i++) {
+        uu0[i] = threshold + (0ULL - u0[i]);
+    }
+
+    MillionaireProtocolSender cmp(num, 64);
+    cmp.compare(res.data(), uu0.data(), *socket);
+
+    for (u64 i = 0; i < num; i++) {
+        b0[i] = res[i] & 1;
+    }
+
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v0[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    coproto::sync_wait(recver->receive(b0, res0, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    for (u64 i = 0; i < num; i++) {
+        res0[i] = res0[i] ^ (b0[i] ? correctMessages1[i] : block(0, 0));
+        res0[i] = res0[i] ^ messages[i][0];
+        res0[i] = res0[i] ^ (b0[i] ? v0[i] : block(0, 0));
+    }
+
+    auto end_comm = socket->bytesReceived() + socket->bytesSent();
+
+    if (LOG) {
+        std::cout << "EqRand comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
+
+    return b0;
+}
+
 void MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 len)
 {
     std::vector<block> temp(v0.size());
@@ -137,6 +235,35 @@ void MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<
         for (u64 j = 0; j < len; j++) {
             res0[i] = res0[i] ^ temp[i * len + j];
         }
+        res0[i] = res0[i] ^ message[i] ^ (b0_sum[i] ? messages[i][0] : messages[i][1]);
+    }
+}
+
+void MuxSender::mux(std::vector<block> &u0, std::vector<block> &res0, u64 len)
+{
+    BitVector b0(u0.size());
+    ssPEQT(1, u0, b0, *socket, 1);
+
+    u64 outputLen = u0.size() / len;
+    BitVector b0_sum(outputLen);
+    for (u64 i = 0; i < outputLen; i++) {
+        b0_sum[i] = false;
+        for (u64 j = 0; j < len; j++) {
+            b0_sum[i] = b0_sum[i] ^ b0[i * len + j];
+        }
+    }
+
+    // for (u64 i = 0; i < outputLen; i++) {
+    //     b0_sum[i] = b0_sum[i] ^ 1;
+    // }
+
+    std::vector<block> message(outputLen);
+    std::vector<std::array<block, 2>> messages(outputLen);
+
+    coproto::sync_wait(recver->receive(b0_sum, message, *prng, *socket));
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    for (u64 i = 0; i < outputLen; i++) {
         res0[i] = res0[i] ^ message[i] ^ (b0_sum[i] ? messages[i][0] : messages[i][1]);
     }
 }
@@ -225,6 +352,7 @@ MuxRecver::MuxRecver(uint64_t num_, coproto::Socket *socket_) : num(num_), socke
 
 MuxRecver::~MuxRecver()
 {
+    delete sender;
     delete recver;
     delete prng;
 }
@@ -233,6 +361,82 @@ BitVector MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::ve
 {
     BitVector b1(num);
     ssPEQT(0, u1, b1, *socket, 1);
+
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+
+    coproto::sync_wait(recver->receive(b1, res1, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v1[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    for (u64 i = 0; i < num; i++) {
+        res1[i] = res1[i] ^ (b1[i] ? correctMessages1[i] : block(0, 0));
+        res1[i] = res1[i] ^ messages[i][0];
+        res1[i] = res1[i] ^ (b1[i] ? v1[i] : block(0, 0));
+    }
+
+    return b1;
+}
+
+BitVector MuxRecver::EqRand(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1)
+{
+    BitVector b1(num);
+    ssPEQT(0, u1, b1, *socket, 1);
+
+    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
+    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
+
+    coproto::sync_wait(recver->receive(b1, res1, *prng, *socket));
+
+    std::vector<block> correctMessages1(num);
+
+    coproto::sync_wait(socket->recv(correctMessages1));
+
+    std::vector<std::array<block, 2>> messages(num);
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+
+    std::vector<block> correctMessages(num);
+
+    for (u64 i = 0; i < num; i++) {
+        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v1[i];
+    }
+
+    coproto::sync_wait(socket->send(correctMessages));
+
+    for (u64 i = 0; i < num; i++) {
+        res1[i] = res1[i] ^ (b1[i] ? correctMessages1[i] : block(0, 0));
+        res1[i] = res1[i] ^ messages[i][0];
+        res1[i] = res1[i] ^ (b1[i] ? v1[i] : block(0, 0));
+    }
+
+    return b1;
+}
+
+BitVector MuxRecver::CmpRand(std::vector<u64> &u1, std::vector<block> &v1, std::vector<block> &res1)
+{
+    BitVector b1(num);
+    // ssPEQT(0, u1, b1, *socket, 1);
+
+    std::vector<u8> res(num);
+    MillionaireProtocolRecver cmp(num, 64);
+    cmp.compare(res.data(), u1.data(), *socket);
+
+    for (u64 i = 0; i < num; i++) {
+        b1[i] = res[i] & 1;
+    }
 
     coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
     coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
@@ -287,6 +491,31 @@ void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<
         for (u64 j = 0; j < len; j++) {
             res1[i] = res1[i] ^ temp[i * len + j];
         }
+        res1[i] = res1[i] ^ message[i] ^ (b1_sum[i] ? messages[i][0] : messages[i][1]);
+    }
+}
+
+void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &res1, u64 len)
+{
+    BitVector b1(u1.size());
+    ssPEQT(0, u1, b1, *socket, 1);
+
+    u64 outputLen = u1.size() / len;
+    BitVector b1_sum(outputLen);
+    for (u64 i = 0; i < outputLen; i++) {
+        b1_sum[i] = false;
+        for (u64 j = 0; j < len; j++) {
+            b1_sum[i] = b1_sum[i] ^ b1[i * len + j];
+        }
+    }
+
+    std::vector<block> message(outputLen);
+    std::vector<std::array<block, 2>> messages(outputLen);
+
+    coproto::sync_wait(sender->send(messages, *prng, *socket));
+    coproto::sync_wait(recver->receive(b1_sum, message, *prng, *socket));
+
+    for (u64 i = 0; i < outputLen; i++) {
         res1[i] = res1[i] ^ message[i] ^ (b1_sum[i] ? messages[i][0] : messages[i][1]);
     }
 }

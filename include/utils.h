@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <bitset>
+#include <blake3.h>
 #include <cmath>
 #include <cryptoTools/Common/Defines.h>
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/AES.h>
+#include <cstddef>
 #include <emmintrin.h>
 #include <libOTe/TwoChooseOne/ConfigureCode.h>
 #include <tuple>
@@ -27,6 +29,47 @@ inline u64 high(oc::block &blk)
     u64 high64 = _mm_extract_epi64(blk, 1);
 
     return high64;
+}
+
+inline bool lsb(oc::block &blk)
+{
+    u8 lsb = _mm_extract_epi8(blk, 0) & 1;
+
+    return lsb;
+}
+
+inline int bitlen(int x)
+{ // x & (-x)
+    if (x < 1)
+        return 0;
+    for (int i = 0; i < 32; i++) {
+        int curr = 1 << i;
+        if (curr >= x)
+            return i;
+    }
+    return 0;
+}
+
+inline uint8_t bool_to_uint8(const uint8_t *data, size_t len)
+{
+    if (len != 0)
+        len = (len > 8 ? 8 : len);
+    else
+        len = 8;
+    uint8_t res = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (data[i])
+            res |= (1ULL << i);
+    }
+    return res;
+}
+
+inline void uint8_to_bool(uint8_t *data, uint8_t input, int length)
+{
+    for (int i = 0; i < length; ++i) {
+        data[i] = (input & 1) == 1;
+        input >>= 1;
+    }
 }
 
 // Decompose the interval [start, end] using an improved method in appendix
@@ -223,6 +266,75 @@ inline uint64_t combination(uint64_t n, uint64_t k)
     }
 
     return result;
+}
+
+inline std::vector<u64> cell(std::vector<u64> data, u64 sidelen)
+{
+    std::vector<u64> res(data.size(), 0);
+    for (size_t i = 0; i < data.size(); ++i) {
+        res[i] = data[i] / sidelen;
+    }
+    return res;
+}
+
+inline block blake3_hash(const std::vector<u64> &cell, u64 dim, block val)
+{
+    blake3_hasher hasher;
+    block hash_out;
+    blake3_hasher_init(&hasher);
+
+    auto merge_val = block(high(val) + (dim << 32), low(val));
+    blake3_hasher_update(&hasher, merge_val.data(), sizeof(block));
+    blake3_hasher_update(&hasher, cell.data(), cell.size() * sizeof(u64));
+
+    blake3_hasher_finalize(&hasher, hash_out.data(), 16);
+
+    return hash_out;
+}
+
+inline block blake3_hash(const std::vector<u64> &cell, u64 dim, u64 val)
+{
+    blake3_hasher hasher;
+    block hash_out;
+    blake3_hasher_init(&hasher);
+
+    auto merge_val = block(dim, val);
+    blake3_hasher_update(&hasher, merge_val.data(), sizeof(block));
+    blake3_hasher_update(&hasher, cell.data(), cell.size() * sizeof(u64));
+
+    blake3_hasher_finalize(&hasher, hash_out.data(), 16);
+
+    return hash_out;
+}
+
+inline std::vector<std::vector<u64>> neigh(std::vector<u64> point, u64 delta)
+{
+    int d = point.size();
+    u64 cell_num = 1 << d;
+    std::vector<u64> k0(d);
+    std::vector<u64> k1(d);
+    std::vector<std::vector<u64>> neighbors;
+
+    for (int i = 0; i < d; ++i) {
+        k0[i] = (point[i] - delta) / (2 * delta);
+        k1[i] = (point[i] + delta) / (2 * delta);
+        if (k0[i] == k1[i]) {
+            throw std::runtime_error("neigh error");
+        }
+    }
+
+    for (size_t i = 0; i < cell_num; i++) {
+        std::vector<u64> neighbor(d);
+        for (int j = 0; j < d; j++) {
+            if ((i >> j) & 1) {
+                neighbor[j] = k1[j];
+            } else {
+                neighbor[j] = k0[j];
+            }
+        }
+        neighbors.push_back(neighbor);
+    }
+    return neighbors;
 }
 
 const osuCrypto::MultType type = osuCrypto::MultType::Tungsten;
