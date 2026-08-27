@@ -6,7 +6,7 @@ using namespace oc;
 
 void LocalMap(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta);
 
-void fuzzyPsi(const oc::CLP &cmd);
+void fuzzyPsiL0(const oc::CLP &cmd);
 
 void fuzzyPsiLp(const oc::CLP &cmd);
 
@@ -14,6 +14,6 @@ void fuzzyPsiLp(const oc::CLP &cmd);
 
 void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta);
 
-void fuzzyPsiPrefix(const oc::CLP &cmd);
+void fuzzyPsiPrefixL0(const oc::CLP &cmd);
 
-void fuzzyPsiLpPrefix(const oc::CLP &cmd);
+void fuzzyPsiPrefixLp(const oc::CLP &cmd);

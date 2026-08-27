@@ -1,5 +1,7 @@
 #include "common.h"
 #include <coproto/Socket/AsioSocket.h>
+#include <format>
+#include <iostream>
 #include <libOTe/TwoChooseOne/Silent/SilentOtExtReceiver.h>
 #include <libOTe/TwoChooseOne/Silent/SilentOtExtSender.h>
 #include <vector>
@@ -88,4 +90,36 @@ void correctCheck(std::vector<u8> &choiceBit, std::vector<u64> &interIndices)
     } else {
         std::cout << "Total " << cnt << "/" << interIndices.size() << " matches found!" << std::endl;
     }
+}
+
+bool isPowerOfTwo(int value)
+{
+    return value > 0 && (value & (value - 1)) == 0;
+}
+
+void printFpsiResult(
+    std::string_view mode,
+    std::string_view side,
+    std::string_view assumption,
+    int lp,
+    std::size_t d,
+    int delta,
+    u64 n,
+    double comm,
+    double comp)
+{
+    const auto modeLabel = std::format("[{}]", mode);
+    const auto assumptionSide = std::format("{}-{}", assumption, side);
+
+    std::cout << std::format(
+                     "{:<10} {:<15} {:^7}  {:^4}  {:^5}  {:^6}  {:^9.2f} {:^9.2f}",
+                     modeLabel,
+                     assumptionSide,
+                     std::format("L{}", lp),
+                     d,
+                     delta,
+                     n,
+                     comm,
+                     comp)
+              << std::endl;
 }

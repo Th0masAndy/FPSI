@@ -58,9 +58,11 @@ void SoOPPRFSender::OPPRF(std::vector<oc::block> encoding, std::vector<oc::block
     SoOPRFSender::OPRF(y0);
 
     auto after = socket->bytesReceived() + socket->bytesSent();
-    std::cout << "OPRF comm: " << (after - before) / 1024.0 / 1024.0 << " MB " << std::endl;
 
-    std::cout << "OKVS size: " << encoding.size() * sizeof(block) / 1024.0 / 1024.0 << " MB " << std::endl;
+    if (LOG) {
+        std::cout << "OPRF comm: " << (after - before) / 1024.0 / 1024.0 << " MB " << std::endl;
+        std::cout << "OKVS size: " << encoding.size() * sizeof(block) / 1024.0 / 1024.0 << " MB " << std::endl;
+    }
 
     coproto::sync_wait(socket->send(encoding));
 }

@@ -54,31 +54,47 @@ docker exec -it <your-container-name> bash
 
 ## Command-line Options
 
-Below are the commonly used command-line flags. Flags use a leading dash (for example `-nn`, `-d`).
+All command-line option names are lowercase. Run the built-in help for the complete description:
+
+```bash
+./build/fpsi -h
+```
 
 | Flag | Meaning | Values / Notes |
 |---|---|---|
-| `-d` | Dimension | integer |
-| `-p` | Metric | `0`: $L_\infty$ (default), `1`: $L_1$, `2`: $L_2$ |
-| `-delta` | Distance threshold (δ) | recommended to be a power of 2 |
-| `-nn` | log2 of input set size (n) | tested values: `8`~`16` |
-| `-v` | Verbosity | `0`: off (default), `1`: info |
-| `-try` | Number of runs | integer, default `1` |
-| `-prefix` | Prefix optimization flag | `0`: off (default), `1`: on |
-| `-assumption` | Assumption | `0`: unique cell, `1`: unique block |
+| `-type` | Protocol | `0`: one-sided (default), `1`: two-sided |
+| `-p` | Distance metric | `0`: $L_\infty$ (default), `1`: $L_1$, `2`: $L_2$ |
+| `-assumption` | One-sided assumption | `0`: unique cell (default), `1`: unique block |
+| `-prefix` | Prefix optimization | flag; when enabled, `delta` must be a power of two |
+| `-sender` | One-sided protocol direction | flag; use the sender-sided protocol |
+| `-n` | Input set size | integer |
+| `-nn` | log2 of input set size | default `10`; tested values: `8`–`16` |
+| `-d` | Dimension | integer, default `2` |
+| `-delta` | Distance threshold | integer, default `2` |
+| `-inter` | Planted intersection size | integer |
+| `-try` | Number of benchmark runs | integer, default `1` |
+| `-v` | Verbose output | `0`: off (default), `1`: on |
+| `-s` | Prefix shift | integer, default `0` |
+| `-h`, `--help` | Help | print options and exit |
 
 ## Usage Examples
 
-Run a basic fuzzy PSI experiment:
+Run the default one-sided protocol:
 
 ```bash
-./fpsi -nn 8 -d 8 -delta 16 -v 1 -assumption 1
+./build/fpsi -type 0 -p 0 -nn 8 -d 8 -delta 16 -v 1
+```
+
+Run the two-sided protocol:
+
+```bash
+./build/fpsi -type 1 -p 2 -nn 8 -d 8 -delta 16
 ```
 
 Enable prefix optimization:
 
 ```bash
-./fpsi -nn 8 -d 8 -delta 16 -v 1 -prefix -assumption 1
+./build/fpsi -type 0 -p 0 -nn 8 -d 8 -delta 16 -prefix
 ```
 
 ------------------------------------------------------------------------

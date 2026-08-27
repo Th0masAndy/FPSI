@@ -14,6 +14,7 @@
 #include "SiOPRF.h"
 #include "SoOPPRF.h"
 #include "b2a.h"
+#include "common.h"
 #include "eq.h"
 #include "secure-join/Prf/AltModPrf.h"
 #include "utils.h"
@@ -278,7 +279,7 @@ void FuzzyMap(
     time.setTimePoint("siOPRF done");
 }
 
-void fuzzyPsi(const oc::CLP &cmd)
+void fuzzyPsiL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -548,15 +549,7 @@ void fuzzyPsi(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "both", "disJoin", 0, d, delta, n, comm, comp);
     // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
     //   << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }
@@ -878,27 +871,7 @@ void fuzzyPsiLp(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    if (lp == 1) {
-        std::cout << std::format(
-                         "[ours]    L1    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                         "{:^10.2f}",
-                         d,
-                         delta,
-                         n,
-                         comm,
-                         comp)
-                  << std::endl;
-    } else {
-        std::cout << std::format(
-                         "[ours]    L2    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                         "{:^10.2f}",
-                         d,
-                         delta,
-                         n,
-                         comm,
-                         comp)
-                  << std::endl;
-    }
+    printFpsiResult("normal", "both", "disJoin", lp, d, delta, n, comm, comp);
 
     // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
     //   << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;

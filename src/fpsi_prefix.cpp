@@ -11,6 +11,7 @@
 #include "SiOPRF.h"
 #include "SoOPPRF.h"
 #include "b2a.h"
+#include "common.h"
 #include "eq.h"
 #include "fpsi.h"
 #include "mul.h"
@@ -363,7 +364,7 @@ void FuzzyMapPrefix(
     time.setTimePoint("siOPRF done");
 }
 
-void fuzzyPsiPrefix(const oc::CLP &cmd)
+void fuzzyPsiPrefixL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -684,21 +685,13 @@ void fuzzyPsiPrefix(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-prefix]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("prefix", "both", "disJoin", 0, d, delta, n, comm, comp);
 
     // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
     //   << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }
 
-void fuzzyPsiLpPrefix(const oc::CLP &cmd)
+void fuzzyPsiPrefixLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -1227,27 +1220,7 @@ void fuzzyPsiLpPrefix(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    if (lp == 1) {
-        std::cout << std::format(
-                         "[ours-prefix]    L1    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                         "{:^10.2f}",
-                         d,
-                         delta,
-                         n,
-                         comm,
-                         comp)
-                  << std::endl;
-    } else {
-        std::cout << std::format(
-                         "[ours-prefix]    L2    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                         "{:^10.2f}",
-                         d,
-                         delta,
-                         n,
-                         comm,
-                         comp)
-                  << std::endl;
-    }
+    printFpsiResult("prefix", "both", "disJoin", lp, d, delta, n, comm, comp);
     // std::cout << "comm: " << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB, "
     //           << " time: " << std::chrono::duration_cast<std::chrono::microseconds>(e - s).count() / double(1000 * 1000) << " s" << std::endl;
 }

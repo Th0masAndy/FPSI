@@ -4,17 +4,17 @@
 
 using namespace oc;
 
-void fuzzyPsiLow4DeltaPx(const oc::CLP &cmd);
-void fuzzyPsiLow4Delta(const oc::CLP &cmd);
+void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd);
+void fuzzyPsiUniqueBlockL0(const oc::CLP &cmd);
 
-void fuzzyPsiLow2Delta(const oc::CLP &cmd);
-void fuzzyPsiLow2DeltaLp(const oc::CLP &cmd);
-void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd);
-void fuzzyPsiLow2DeltaLpPx(const oc::CLP &cmd);
+void fuzzyPsiUniqueCellL0(const oc::CLP &cmd);
+void fuzzyPsiUniqueCellLp(const oc::CLP &cmd);
+void fuzzyPsiUniqueCellPxL0(const oc::CLP &cmd);
+void fuzzyPsiUniqueCellPxLp(const oc::CLP &cmd);
 
-void fuzzyPsiLow2DeltaSender(const oc::CLP &cmd);
-void fuzzyPsiLow2DeltaLpSender(const oc::CLP &cmd);
+void fuzzyPsiUniqueCellSenderL0(const oc::CLP &cmd);
+void fuzzyPsiUniqueCellSenderLp(const oc::CLP &cmd);
 
-void fuzzyPsiLow4DeltaLpPx(const oc::CLP &cmd);
-void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd);
-void fuzzyPsiLow4DeltaLpPxAug(const oc::CLP &cmd);
+void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd);
+void fuzzyPsiUniqueBlockLp(const oc::CLP &cmd);
+void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd);

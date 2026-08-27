@@ -41,7 +41,6 @@ void SiOPRFSender::setup()
 
 void SiOPRFSender::OPRF(std::vector<oc::block> &x0, std::vector<oc::block> &y0)
 {
-    // coproto::sync_wait(socket[0]->send(std::string("hello from sender\n")) | macoro::start_on(*pool));
     auto r = coproto::sync_wait(coproto::when_all_ready(sender->evaluate(x0, y0, *socket, *prng), ole->start()));
 
     std::get<0>(r).result();

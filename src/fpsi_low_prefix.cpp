@@ -38,7 +38,7 @@ void preProcessPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> 
     }
 }
 
-void fuzzyPsiLow4DeltaPx(const oc::CLP &cmd)
+void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -308,18 +308,10 @@ void fuzzyPsiLow4DeltaPx(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-low-px]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("prefix", "recv", "uniqBlk", 0, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow4DeltaLpPx(const oc::CLP &cmd)
+void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -728,18 +720,10 @@ void fuzzyPsiLow4DeltaLpPx(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-low]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("prefix", "recv", "uniqBlk", lp, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow4DeltaLpPxAug(const oc::CLP &cmd)
+void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -1118,13 +1102,5 @@ void fuzzyPsiLow4DeltaLpPxAug(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-low-px]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("prefix", "recv", "uniqBlk", lp, d, delta, n, comm, comp);
 }

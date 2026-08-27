@@ -38,7 +38,7 @@ void preProcess(std::vector<std::vector<u64>> &inputs, std::vector<block> &listK
     }
 }
 
-void fuzzyPsiLow2Delta(const oc::CLP &cmd)
+void fuzzyPsiUniqueCellL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -314,18 +314,10 @@ void fuzzyPsiLow2Delta(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "recv", "uniqCel", 0, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow2DeltaSender(const oc::CLP &cmd)
+void fuzzyPsiUniqueCellSenderL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -627,18 +619,10 @@ void fuzzyPsiLow2DeltaSender(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "send", "uniqCel", 0, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow2DeltaLpSender(const oc::CLP &cmd)
+void fuzzyPsiUniqueCellSenderLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -975,19 +959,10 @@ void fuzzyPsiLow2DeltaLpSender(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[2delta]    L{:^1}    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     lp,
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "send", "uniqCel", lp, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd)
+void fuzzyPsiUniqueCellPxL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -1262,18 +1237,10 @@ void fuzzyPsiLow2DeltaPx(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-low-2delta]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("prefix", "recv", "uniqCel", 0, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow2DeltaLp(const oc::CLP &cmd)
+void fuzzyPsiUniqueCellLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -1531,19 +1498,10 @@ void fuzzyPsiLow2DeltaLp(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[2delta]    L{:^1}    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     lp,
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "recv", "uniqCel", lp, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow2DeltaLpPx(const oc::CLP &cmd)
+void fuzzyPsiUniqueCellPxLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -1906,19 +1864,10 @@ void fuzzyPsiLow2DeltaLpPx(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-px]    L{:^1}    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     lp,
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("prefix", "recv", "uniqCel", lp, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow4Delta(const oc::CLP &cmd)
+void fuzzyPsiUniqueBlockL0(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -2150,18 +2099,10 @@ void fuzzyPsiLow4Delta(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-low]    L0    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "recv", "uniqBlk", 0, d, delta, n, comm, comp);
 }
 
-void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd)
+void fuzzyPsiUniqueBlockLp(const oc::CLP &cmd)
 {
     u64 n = cmd.getOr("n", 1ull << cmd.getOr("nn", 10));
     size_t d = cmd.getOr("d", 2);
@@ -2395,13 +2336,5 @@ void fuzzyPsiLow4DeltaLp(const oc::CLP &cmd)
     comp /= numTry;
     comm /= numTry;
 
-    std::cout << std::format(
-                     "[ours-low-4delta-lp]    Lp    {:^5}  {:^5}  {:^5}  {:^10.2f} "
-                     "{:^10.2f}",
-                     d,
-                     delta,
-                     n,
-                     comm,
-                     comp)
-              << std::endl;
+    printFpsiResult("normal", "recv", "uniqBlk", lp, d, delta, n, comm, comp);
 }

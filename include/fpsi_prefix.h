@@ -6,6 +6,6 @@ using namespace oc;
 
 void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta);
 
-void fuzzyPsiPrefix(const oc::CLP &cmd);
+void fuzzyPsiPrefixL0(const oc::CLP &cmd);
 
-void fuzzyPsiLpPrefix(const oc::CLP &cmd);
+void fuzzyPsiPrefixLp(const oc::CLP &cmd);
