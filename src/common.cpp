@@ -1,9 +1,11 @@
 #include "common.h"
+#include <algorithm>
 #include <coproto/Socket/AsioSocket.h>
 #include <format>
 #include <iostream>
 #include <libOTe/TwoChooseOne/Silent/SilentOtExtReceiver.h>
 #include <libOTe/TwoChooseOne/Silent/SilentOtExtSender.h>
+#include <unordered_set>
 #include <vector>
 #include "utils.h"
 
@@ -11,61 +13,66 @@ using namespace oc;
 using namespace std;
 
 void transferElements(
-    std::vector<std::vector<u64>> &set, std::vector<u8> &choiceBits, std::vector<std::vector<block>> &matches, std::array<coproto::AsioSocket, 2> &sock)
+    const PointSet &set, std::vector<u8> &choiceBits, std::vector<std::vector<block>> &matches, std::array<coproto::AsioSocket, 2> &sock)
 {
-    u64 n = set.size();
-    u64 d = set[0].size();
-    PRNG prng(sysRandomSeed());
+    const u64 n = set.size();
+    const u64 d = set.dim();
+    const u64 packedDimension = (d + 1) / 2;
 
     std::thread sendOT([&] {
+        PRNG otPrng(sysRandomSeed());
         SilentOtExtSender send;
         send.configure(n, 128);
         send.mMultType = type;
 
-        coproto::sync_wait(send.genSilentBaseOts(prng, sock[0]));
+        coproto::sync_wait(send.genSilentBaseOts(otPrng, sock[0]));
 
         std::vector<std::array<block, 2>> messages(n);
 
-        coproto::sync_wait(send.send(messages, prng, sock[0]));
+        coproto::sync_wait(send.send(messages, otPrng, sock[0]));
 
-        std::vector<block> correctMessages(n * d / 2 * 2);
-        PRNG prng0, prng1;
-        for (int i = 0; i < n; i++) {
-            prng0.SetSeed(messages[i][0]);
-            prng1.SetSeed(messages[i][1]);
-            for (int j = 0; j < d / 2; j++) {
-                correctMessages[i * d + j * 2] = prng0.get<block>();
-                correctMessages[i * d + j * 2 + 1] = block(set[i][j * 2], set[i][j * 2 + 1]) ^ prng0.get<block>();
+        // Only choice 1 receives an element. One ciphertext per pair of
+        // coordinates is sufficient; the previous even-index blocks were
+        // never consumed by the receiver.
+        std::vector<block> ciphertexts(n * packedDimension);
+        PRNG payloadPrng;
+        for (u64 i = 0; i < n; ++i) {
+            payloadPrng.SetSeed(messages[i][1]);
+            for (u64 j = 0; j < packedDimension; ++j) {
+                const u64 first = set[i][2 * j];
+                const u64 second = 2 * j + 1 < d ? set[i][2 * j + 1] : 0;
+                ciphertexts[i * packedDimension + j] = block(first, second) ^ payloadPrng.get<block>();
             }
         }
-        coproto::sync_wait(sock[0].send(correctMessages));
+        coproto::sync_wait(sock[0].send(ciphertexts));
     });
 
     std::thread recvOT([&] {
+        PRNG otPrng(sysRandomSeed());
         SilentOtExtReceiver recv;
         recv.configure(n, 128);
         recv.mMultType = type;
 
-        coproto::sync_wait(recv.genSilentBaseOts(prng, sock[1]));
+        coproto::sync_wait(recv.genSilentBaseOts(otPrng, sock[1]));
 
         std::vector<block> messages(n);
         BitVector choices(choiceBits.data(), choiceBits.size());
 
-        coproto::sync_wait(recv.receive(choices, messages, prng, sock[1]));
+        coproto::sync_wait(recv.receive(choices, messages, otPrng, sock[1]));
 
-        std::vector<block> correctMessages(n * d / 2 * 2);
-        coproto::sync_wait(sock[1].recv(correctMessages));
+        std::vector<block> ciphertexts(n * packedDimension);
+        coproto::sync_wait(sock[1].recv(ciphertexts));
 
-        PRNG prng;
-        for (int i = 0; i < n; i++) {
+        matches.reserve(std::count(choiceBits.begin(), choiceBits.end(), u8 { 1 }));
+        PRNG payloadPrng;
+        for (u64 i = 0; i < n; ++i) {
             if (choiceBits[i]) {
-                prng.SetSeed(messages[i]);
-                std::vector<block> element;
-                for (int j = 0; j < d / 2; j++) {
-                    block val = prng.get<block>() ^ correctMessages[i * d + j * 2 + 1];
-                    element.push_back(val);
+                payloadPrng.SetSeed(messages[i]);
+                std::vector<block> element(packedDimension);
+                for (u64 j = 0; j < packedDimension; ++j) {
+                    element[j] = payloadPrng.get<block>() ^ ciphertexts[i * packedDimension + j];
                 }
-                matches.push_back(element);
+                matches.push_back(std::move(element));
             }
         }
     });
@@ -74,22 +81,71 @@ void transferElements(
     recvOT.join();
 }
 
-void correctCheck(std::vector<u8> &choiceBit, std::vector<u64> &interIndices)
+std::vector<u64> sampleUniqueIndices(u64 n, u64 count, PRNG &prng)
 {
-    u64 cnt = 0;
-    for (int i = 0; i < choiceBit.size(); i++) {
-        if (choiceBit[i]) {
-            cnt++;
-        }
-        if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-            throw runtime_error("false positive in fuzzyPsi");
+    if (count > n) {
+        throw std::invalid_argument("intersection size cannot exceed the set size");
+    }
+
+    std::vector<u64> indices;
+    indices.reserve(count);
+    std::unordered_set<u64> selected;
+    selected.reserve(count);
+
+    while (indices.size() < count) {
+        const u64 index = prng.get<u64>() % n;
+        if (selected.insert(index).second) {
+            indices.push_back(index);
         }
     }
-    if (cnt != interIndices.size()) {
-        throw runtime_error("false negative in fuzzyPsi");
-    } else {
-        std::cout << "Total " << cnt << "/" << interIndices.size() << " matches found!" << std::endl;
+    return indices;
+}
+
+void correctCheck(const std::vector<u8> &choiceBit, const std::vector<u64> &interIndices)
+{
+    std::vector<u8> expected(choiceBit.size(), 0);
+    for (const auto index : interIndices) {
+        if (index >= expected.size()) {
+            throw std::invalid_argument("expected intersection index is out of range");
+        }
+        if (expected[index]) {
+            throw std::invalid_argument("expected intersection indices contain duplicates");
+        }
+        expected[index] = 1;
     }
+
+    u64 actualCount = 0;
+    std::vector<u64> actualIndices;
+    actualIndices.reserve(interIndices.size());
+    bool mismatch = false;
+    for (u64 i = 0; i < choiceBit.size(); ++i) {
+        const bool actual = choiceBit[i] != 0;
+        actualCount += actual;
+        if (actual) {
+            actualIndices.push_back(i);
+        }
+        mismatch |= actual != static_cast<bool>(expected[i]);
+    }
+
+    if (mismatch) {
+        auto formatIndices = [](const std::vector<u64> &indices) {
+            std::string result;
+            for (u64 i = 0; i < indices.size(); ++i) {
+                if (i != 0) {
+                    result += ",";
+                }
+                result += std::to_string(indices[i]);
+            }
+            return result;
+        };
+
+        auto sortedExpected = interIndices;
+        std::sort(sortedExpected.begin(), sortedExpected.end());
+        throw runtime_error(std::format(
+            "fuzzyPsi result mismatch: expected [{}], actual [{}]", formatIndices(sortedExpected), formatIndices(actualIndices)));
+    }
+
+    std::cout << "Total " << actualCount << "/" << interIndices.size() << " matches found!" << std::endl;
 }
 
 bool isPowerOfTwo(int value)

@@ -25,7 +25,7 @@ using namespace secJoin;
 int shift = 1; // modify prefixLen by shift
 
 // to be fixed
-void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
+void LocalMapPrefix(PointSet &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
 {
     PRNG prng(sysRandomSeed());
 
@@ -49,8 +49,8 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
         interval.reserve(m);
 
         // get interval [a_i - radius, a_i + radius]
-        for (auto &elem : inputs) {
-            interval.push_back({ elem[i] - delta, elem[i] + delta });
+        for (u64 j = 0; j < m; ++j) {
+            interval.push_back({ inputs[j][i] - delta, inputs[j][i] + delta });
         }
 
         // Sort points by x-coordinate; if equal, sort by y-coordinate
@@ -76,7 +76,7 @@ void LocalMapPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &p
     };
 
     for (u64 j = 0; j < m; j++) {
-        auto &elem = inputs[j];
+        auto elem = inputs[j];
         for (u64 i = 0; i < d; i++) {
             auto it = std::lower_bound(intervals[i].begin(), intervals[i].end(), elem[i], compare_lambda);
 
@@ -132,10 +132,10 @@ void FuzzyMapPrefix(
     int prefixLen,
     int prefixNum,
     std::vector<u64> &U,
-    std::vector<std::vector<u64>> &sendSet,
+    PointSet &sendSet,
     std::vector<block> &sendPid,
     std::vector<block> &senderOKVS,
-    std::vector<std::vector<u64>> &recvSet,
+    PointSet &recvSet,
     std::vector<block> &recvPid,
     std::vector<block> &recverOKVS,
     std::vector<block> &ID_R,
@@ -381,9 +381,10 @@ void fuzzyPsiPrefixL0(const oc::CLP &cmd)
     int prefixLen = U.size();
     int prefixNum = prefixNumMap.at(2 * delta);
 
-    int interSize = cmd.getOr("nn", 4);
+    u64 interSize = cmd.getOr("inter", 4ull);
 
-    std::vector<std::vector<u64>> sendSet;
+    PointSet sendSet(0, d);
+    sendSet.reserve(n);
     std::vector<block> sendPid;
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
@@ -399,7 +400,8 @@ void fuzzyPsiPrefixL0(const oc::CLP &cmd)
         sendSet.push_back(tmp);
     }
 
-    std::vector<std::vector<u64>> recvSet;
+    PointSet recvSet(0, d);
+    recvSet.reserve(n);
     std::vector<block> recvPid;
     std::vector<block> recvListKey;
     std::vector<block> recvListVal;
@@ -413,18 +415,13 @@ void fuzzyPsiPrefixL0(const oc::CLP &cmd)
         recvSet.push_back(tmp);
     }
 
-    std::vector<u64> interIndices;
-    while (interIndices.size() < interSize) {
-        u64 idx = prng.get<u64>() % n;
-        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
-            interIndices.push_back(idx);
-        }
-    }
+    auto interIndices = sampleUniqueIndices(n, interSize, prng);
 
     for (u64 i = 0; i < interSize; i++) {
-        u64 idx = interIndices[i];
+        const u64 sendIdx = interIndices[i];
+        const u64 recvIdx = interIndices[i];
         for (u64 j = 0; j < d; j++) {
-            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (delta + 1));
+            recvSet[recvIdx][j] = sendSet[sendIdx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (delta + 1));
         }
     }
 
@@ -604,75 +601,11 @@ void fuzzyPsiPrefixL0(const oc::CLP &cmd)
         // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " <<
         // std::endl;
 
-        std::thread sendOT([&] {
-            SilentOtExtSender send;
-            send.configure(n, 128);
-            send.mMultType = type;
-
-            coproto::sync_wait(send.genSilentBaseOts(prng, sock[0]));
-
-            std::vector<std::array<block, 2>> messages(n);
-
-            coproto::sync_wait(send.send(messages, prng, sock[0]));
-
-            std::vector<block> correctMessages(n * d / 2 * 2);
-            PRNG prng0, prng1;
-            for (int i = 0; i < n; i++) {
-                prng0.SetSeed(messages[i][0]);
-                prng1.SetSeed(messages[i][1]);
-                for (int j = 0; j < d / 2; j++) {
-                    correctMessages[i * d + j * 2] = prng0.get<block>();
-                    correctMessages[i * d + j * 2 + 1] = block(sendSet[i][j * 2], sendSet[i][j * 2 + 1]) ^ prng0.get<block>();
-                }
-            }
-            coproto::sync_wait(sock[0].send(correctMessages));
-        });
-
         std::vector<std::vector<block>> matches;
-
-        std::thread recvOT([&] {
-            SilentOtExtReceiver recv;
-            recv.configure(n, 128);
-            recv.mMultType = type;
-
-            coproto::sync_wait(recv.genSilentBaseOts(prng, sock[1]));
-
-            std::vector<block> messages(n);
-            BitVector choices(choiceBit.data(), choiceBit.size());
-
-            coproto::sync_wait(recv.receive(choices, messages, prng, sock[1]));
-
-            std::vector<block> correctMessages(n * d / 2 * 2);
-            coproto::sync_wait(sock[1].recv(correctMessages));
-
-            PRNG prng;
-            for (int i = 0; i < n; i++) {
-                if (choiceBit[i]) {
-                    prng.SetSeed(messages[i]);
-                    std::vector<block> element;
-                    for (int j = 0; j < d / 2; j++) {
-                        block val = prng.get<block>() ^ correctMessages[i * d + j * 2 + 1];
-                        element.push_back(val);
-                    }
-                    matches.push_back(element);
-                }
-            }
-        });
-
-        sendOT.join();
-        recvOT.join();
+        transferElements(sendSet, choiceBit, matches, sock);
 
         if (verbose) {
-            for (int i = 0; i < choiceBit.size(); i++) {
-                if (choiceBit[i]) {
-                    std::cout << "intersection at index " << i << std::endl;
-                }
-                if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-                    throw runtime_error("false positive in fuzzyPsi");
-                }
-            }
-            std::cout << "All matches found!" << std::endl;
-
+            correctCheck(choiceBit, interIndices);
             std::cout << time << std::endl;
         }
     }
@@ -699,7 +632,7 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
     int lp = cmd.getOr("p", 2);
     int verbose = cmd.getOr("v", 0);
 
-    u64 delta_p = std::pow(delta, lp);
+    u64 delta_p = integerPow(delta, lp);
 
     int numTry = cmd.getOr("try", 1);
 
@@ -719,9 +652,10 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
     int prefixLenUpDown = 2 * U_prime.size();
     int prefixNumUpDown = 2 * prefixNumMap.at(delta);
 
-    int interSize = cmd.getOr("nn", 4);
+    u64 interSize = cmd.getOr("inter", 4ull);
 
-    std::vector<std::vector<u64>> sendSet;
+    PointSet sendSet(0, d);
+    sendSet.reserve(n);
     std::vector<block> sendPid;
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
@@ -737,7 +671,8 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
         sendSet.push_back(tmp);
     }
 
-    std::vector<std::vector<u64>> recvSet;
+    PointSet recvSet(0, d);
+    recvSet.reserve(n);
     std::vector<block> recvPid;
     std::vector<block> recvListKey;
     std::vector<block> recvListVal;
@@ -751,20 +686,15 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
         recvSet.push_back(tmp);
     }
 
-    std::vector<u64> interIndices;
-    while (interIndices.size() < interSize) {
-        u64 idx = prng.get<u64>() % n;
-        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
-            interIndices.push_back(idx);
-        }
-    }
+    auto interIndices = sampleUniqueIndices(n, interSize, prng);
 
     int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
 
     for (u64 i = 0; i < interSize; i++) {
-        u64 idx = interIndices[i];
+        const u64 sendIdx = interIndices[i];
+        const u64 recvIdx = interIndices[i];
         for (u64 j = 0; j < d; j++) {
-            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+            recvSet[recvIdx][j] = sendSet[sendIdx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
         }
     }
 
@@ -979,7 +909,7 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
             for (u64 i = 0; i < n; i++) {
                 auto pre = getIntervalPrefix(0ULL - disS[i], delta_p - disS[i]);
                 for (auto &p : pre) {
-                    p = p ^ block(i << 32, 0);
+                    p ^= block(i << 32, 0);
                     prefixS.push_back(p);
                 }
             }
@@ -1006,9 +936,9 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
                             block key = block(high(ID_R[i]) << 12, 0) ^ block((j << 8) | (batch << 6) | (0 << 4), 0) ^ p;
                             block val = ZeroBlock;
                             if (batch == 0) {
-                                val = block(0, std::pow(recvSet[i][j] - upbound, batch + 1));
+                                val = block(0, integerPow(recvSet[i][j] - upbound, batch + 1));
                             } else {
-                                val = block(std::pow(recvSet[i][j] - upbound, batch + 1), 0);
+                                val = block(integerPow(recvSet[i][j] - upbound, batch + 1), 0);
                             }
                             filterKey.push_back(key);
                             filterVal.push_back(val);
@@ -1020,9 +950,9 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
                             block key = block(high(ID_R[i]) << 12, 0) ^ block((j << 8) | (batch << 6) | (1 << 4), 0) ^ p;
                             block val = ZeroBlock;
                             if (batch == 0) {
-                                val = block(0, std::pow(upbound - recvSet[i][j], batch + 1));
+                                val = block(0, integerPow(upbound - recvSet[i][j], batch + 1));
                             } else {
-                                val = block(std::pow(upbound - recvSet[i][j], batch + 1), 0);
+                                val = block(integerPow(upbound - recvSet[i][j], batch + 1), 0);
                             }
                             filterKey.push_back(key);
                             filterVal.push_back(val);
@@ -1116,7 +1046,7 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
             for (u64 i = 0; i < n; i++) {
                 auto pre = getPrefix(disR[i], prefixLenIfmat);
                 for (auto &p : pre) {
-                    p = p ^ block(i << 32, 0);
+                    p ^= block(i << 32, 0);
                     prefixR.push_back(p);
                 }
             }
@@ -1139,75 +1069,11 @@ void fuzzyPsiPrefixLp(const oc::CLP &cmd)
         // std::cout << (sock[0].bytesReceived() + sock[0].bytesSent() + sock2[0].bytesReceived() + sock2[0].bytesSent()) / 1024.0 / 1024.0 << " MB " <<
         // std::endl;
 
-        std::thread sendOT([&] {
-            SilentOtExtSender send;
-            send.configure(n, 128);
-            send.mMultType = type;
-
-            coproto::sync_wait(send.genSilentBaseOts(prng, sock[0]));
-
-            std::vector<std::array<block, 2>> messages(n);
-
-            coproto::sync_wait(send.send(messages, prng, sock[0]));
-
-            std::vector<block> correctMessages(n * d / 2 * 2);
-            PRNG prng0, prng1;
-            for (int i = 0; i < n; i++) {
-                prng0.SetSeed(messages[i][0]);
-                prng1.SetSeed(messages[i][1]);
-                for (int j = 0; j < d / 2; j++) {
-                    correctMessages[i * d + j * 2] = prng0.get<block>();
-                    correctMessages[i * d + j * 2 + 1] = block(sendSet[i][j * 2], sendSet[i][j * 2 + 1]) ^ prng0.get<block>();
-                }
-            }
-            coproto::sync_wait(sock[0].send(correctMessages));
-        });
-
         std::vector<std::vector<block>> matches;
-
-        std::thread recvOT([&] {
-            SilentOtExtReceiver recv;
-            recv.configure(n, 128);
-            recv.mMultType = type;
-
-            coproto::sync_wait(recv.genSilentBaseOts(prng, sock[1]));
-
-            std::vector<block> messages(n);
-            BitVector choices(choiceBit.data(), choiceBit.size());
-
-            coproto::sync_wait(recv.receive(choices, messages, prng, sock[1]));
-
-            std::vector<block> correctMessages(n * d / 2 * 2);
-            coproto::sync_wait(sock[1].recv(correctMessages));
-
-            PRNG prng;
-            for (int i = 0; i < n; i++) {
-                if (choiceBit[i]) {
-                    prng.SetSeed(messages[i]);
-                    std::vector<block> element;
-                    for (int j = 0; j < d / 2; j++) {
-                        block val = prng.get<block>() ^ correctMessages[i * d + j * 2 + 1];
-                        element.push_back(val);
-                    }
-                    matches.push_back(element);
-                }
-            }
-        });
-
-        sendOT.join();
-        recvOT.join();
+        transferElements(sendSet, choiceBit, matches, sock);
 
         if (verbose) {
-            for (int i = 0; i < choiceBit.size(); i++) {
-                if (choiceBit[i]) {
-                    std::cout << "intersection at index " << i << std::endl;
-                }
-                if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-                    throw runtime_error("false positive in fuzzyPsi");
-                }
-            }
-            std::cout << "All matches found!" << std::endl;
-
+            correctCheck(choiceBit, interIndices);
             std::cout << time << std::endl;
         }
     }

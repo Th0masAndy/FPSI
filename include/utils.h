@@ -10,28 +10,98 @@
 #include <cstddef>
 #include <emmintrin.h>
 #include <libOTe/TwoChooseOne/ConfigureCode.h>
+#include <span>
+#include <stdexcept>
 #include <tuple>
 #include <vector>
 
 using namespace osuCrypto;
 
-std::tuple<std::vector<std::vector<u64>>, std::vector<std::vector<u64>>> genInputs(u64 n, u64 d);
+class PointSet {
+public:
+    PointSet() = default;
 
-inline u64 low(oc::block &blk)
+    PointSet(u64 rows, u64 dimension)
+        : mData(rows * dimension)
+        , mDimension(dimension)
+    {
+    }
+
+    u64 size() const
+    {
+        return mDimension == 0 ? 0 : mData.size() / mDimension;
+    }
+
+    u64 dim() const
+    {
+        return mDimension;
+    }
+
+    bool empty() const
+    {
+        return mData.empty();
+    }
+
+    void reserve(u64 rows)
+    {
+        if (mDimension != 0) {
+            mData.reserve(rows * mDimension);
+        }
+    }
+
+    void push_back(const std::vector<u64> &point)
+    {
+        if (mDimension == 0) {
+            mDimension = point.size();
+        }
+        if (point.size() != mDimension) {
+            throw std::invalid_argument("PointSet dimension mismatch");
+        }
+        mData.insert(mData.end(), point.begin(), point.end());
+    }
+
+    std::span<u64> operator[](u64 row)
+    {
+        return { mData.data() + row * mDimension, static_cast<std::size_t>(mDimension) };
+    }
+
+    std::span<const u64> operator[](u64 row) const
+    {
+        return { mData.data() + row * mDimension, static_cast<std::size_t>(mDimension) };
+    }
+
+    std::vector<u64> &data()
+    {
+        return mData;
+    }
+
+    const std::vector<u64> &data() const
+    {
+        return mData;
+    }
+
+private:
+    std::vector<u64> mData;
+    u64 mDimension = 0;
+};
+
+std::tuple<PointSet, PointSet> genInputs(u64 n, u64 d);
+
+inline u64 low(const oc::block &blk)
 {
     u64 low64 = _mm_extract_epi64(blk, 0);
 
     return low64;
 }
 
-inline u64 high(oc::block &blk)
+inline u64 high(const oc::block &blk)
 {
     u64 high64 = _mm_extract_epi64(blk, 1);
 
     return high64;
 }
 
-inline bool lsb(oc::block &blk)
+inline bool lsb(const oc::block &blk)
 {
     u8 lsb = _mm_extract_epi8(blk, 0) & 1;
 
@@ -89,7 +159,7 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
 
     // step 1
     // find aligned_start >= start, s.t. 2^(bit_width-1) | aligned_start
-    while (aligned_start <= end && (aligned_start & ((1 << (bit_width - 1)) - 1))) {
+    while (aligned_start <= end && (aligned_start & ((u64 { 1 } << (bit_width - 1)) - 1))) {
         aligned_start++;
     }
 
@@ -107,10 +177,12 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
     std::bitset<64> left_bits(left_len);
 
     std::vector<block> results;       // result set
+    results.reserve(2 * bit_width);
     u64 right_pos = aligned_start;    // move right
     u64 left_pos = aligned_start - 1; // move left
 
     std::vector<block> temp_results;
+    temp_results.reserve(2 * bit_width);
 
     // traverse from high bit to low bit
     for (u64 i = bit_width; i >= 1; i--) {
@@ -121,7 +193,7 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
             } else {
                 results.push_back(block(i - 1, right_pos >> (i - 1)));
             }
-            right_pos += (1 << (i - 1));
+            right_pos += (u64 { 1 } << (i - 1));
         }
         if (left_bits[i - 1]) {
             // if left_len's i-th bit is 1
@@ -130,15 +202,15 @@ inline std::vector<block> getIntervalPrefix(u64 start, u64 end, int shift = 0)
             } else {
                 results.push_back(block(i - 1, left_pos >> (i - 1)));
             }
-            left_pos -= (1 << (i - 1));
+            left_pos -= (u64 { 1 } << (i - 1));
         }
     }
 
     if (shift != 0) {
-        for (int i = 0; i < temp_results.size(); i++) {
+        for (std::size_t i = 0; i < temp_results.size(); ++i) {
             int len = high(temp_results[i]);
             u64 base = low(temp_results[i]);
-            for (int j = 0; j < (1 << (len - (bit_width - 1 - shift))); j++) {
+            for (u64 j = 0; j < (u64 { 1 } << (len - (bit_width - 1 - shift))); ++j) {
                 results.push_back(block(bit_width - 1 - shift, (base << (len - (bit_width - 1 - shift))) + j));
             }
         }
@@ -160,19 +232,20 @@ inline u64 firstLessThan(u64 x, const std::vector<u64> &U)
     return *it;
 }
 
-inline std::vector<block> getIntervalPrefixSet(u64 start, u64 end, std::vector<u64> U)
+inline std::vector<block> getIntervalPrefixSet(u64 start, u64 end, const std::vector<u64> &U)
 {
     std::vector<block> finalPrefixes;
     auto prefixes = getIntervalPrefix(start, end);
+    finalPrefixes.reserve(prefixes.size());
     for (auto &p : prefixes) {
         u64 len = high(p);
         u64 base = low(p);
-        if (std::find(U.begin(), U.end(), len) != U.end()) {
+        if (std::binary_search(U.begin(), U.end(), len)) {
             finalPrefixes.push_back(p);
         } else {
             u64 newLen = firstLessThan(len, U);
 
-            for (int j = 0; j < (1 << (len - newLen)); j++) {
+            for (u64 j = 0; j < (u64 { 1 } << (len - newLen)); ++j) {
                 finalPrefixes.push_back(block(newLen, (base << (len - newLen)) + j));
             }
         }
@@ -184,6 +257,7 @@ inline std::vector<block> getIntervalPrefixSet(u64 start, u64 end, std::vector<u
 inline std::vector<block> getPrefix(u64 x, int maxLen)
 {
     std::vector<block> res;
+    res.reserve(maxLen);
 
     for (int len = 0; len < maxLen; len++) {
         res.push_back(block(len, x >> (len)));
@@ -192,9 +266,10 @@ inline std::vector<block> getPrefix(u64 x, int maxLen)
     return res;
 }
 
-inline std::vector<block> getPrefixSet(u64 x, std::vector<u64> U)
+inline std::vector<block> getPrefixSet(u64 x, const std::vector<u64> &U)
 {
     std::vector<block> res;
+    res.reserve(U.size());
 
     for (auto &len : U) {
         res.push_back(block(len, x >> (len)));
@@ -207,7 +282,7 @@ inline u64 upBound(block prefix)
 {
     u64 len = high(prefix);
     u64 base = low(prefix);
-    u64 upper = (1 << len) - 1 + (base << len);
+    u64 upper = (u64 { 1 } << len) - 1 + (base << len);
 
     return upper;
 }
@@ -268,7 +343,22 @@ inline uint64_t combination(uint64_t n, uint64_t k)
     return result;
 }
 
-inline std::vector<u64> cell(std::vector<u64> data, u64 sidelen)
+inline u64 integerPow(u64 base, u64 exponent)
+{
+    u64 result = 1;
+    while (exponent != 0) {
+        if (exponent & 1) {
+            result *= base;
+        }
+        exponent >>= 1;
+        if (exponent != 0) {
+            base *= base;
+        }
+    }
+    return result;
+}
+
+inline std::vector<u64> cell(std::span<const u64> data, u64 sidelen)
 {
     std::vector<u64> res(data.size(), 0);
     for (size_t i = 0; i < data.size(); ++i) {
@@ -277,7 +367,7 @@ inline std::vector<u64> cell(std::vector<u64> data, u64 sidelen)
     return res;
 }
 
-inline block blake3_hash(const std::vector<u64> &cell, u64 dim, block val)
+inline block blake3_hash(std::span<const u64> cell, u64 dim, block val)
 {
     blake3_hasher hasher;
     block hash_out;
@@ -292,7 +382,7 @@ inline block blake3_hash(const std::vector<u64> &cell, u64 dim, block val)
     return hash_out;
 }
 
-inline block blake3_hash(const std::vector<u64> &cell, u64 dim, u64 val)
+inline block blake3_hash(std::span<const u64> cell, u64 dim, u64 val)
 {
     blake3_hasher hasher;
     block hash_out;
@@ -307,13 +397,13 @@ inline block blake3_hash(const std::vector<u64> &cell, u64 dim, u64 val)
     return hash_out;
 }
 
-inline std::vector<std::vector<u64>> neigh(std::vector<u64> point, u64 delta)
+inline PointSet neigh(std::span<const u64> point, u64 delta)
 {
     int d = point.size();
-    u64 cell_num = 1 << d;
+    u64 cell_num = u64 { 1 } << d;
     std::vector<u64> k0(d);
     std::vector<u64> k1(d);
-    std::vector<std::vector<u64>> neighbors;
+    PointSet neighbors(cell_num, d);
 
     for (int i = 0; i < d; ++i) {
         k0[i] = (point[i] - delta) / (2 * delta);
@@ -324,15 +414,13 @@ inline std::vector<std::vector<u64>> neigh(std::vector<u64> point, u64 delta)
     }
 
     for (size_t i = 0; i < cell_num; i++) {
-        std::vector<u64> neighbor(d);
         for (int j = 0; j < d; j++) {
             if ((i >> j) & 1) {
-                neighbor[j] = k1[j];
+                neighbors[i][j] = k1[j];
             } else {
-                neighbor[j] = k0[j];
+                neighbors[i][j] = k0[j];
             }
         }
-        neighbors.push_back(neighbor);
     }
     return neighbors;
 }

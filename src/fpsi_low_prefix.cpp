@@ -20,7 +20,7 @@
 #include "secure-join/Prf/AltModPrf.h"
 #include "utils.h"
 
-void preProcessPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
+void preProcessPrefix(PointSet &inputs, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
 {
     PRNG prng(oc::sysRandomSeed());
     int d = inputs[0].size();
@@ -29,7 +29,8 @@ void preProcessPrefix(std::vector<std::vector<u64>> &inputs, std::vector<block> 
         for (int j = 0; j < d; j++) {
             auto prefixes = getIntervalPrefixSet(inputs[i][j] - delta, inputs[i][j] + delta, prefixLenMapNaive.at(2 * delta));
             for (auto prefix : prefixes) {
-                for (auto neighbor : neighbors) {
+                for (u64 z = 0; z < neighbors.size(); ++z) {
+                    auto neighbor = neighbors[z];
                     listKey.push_back(blake3_hash(neighbor, j, prefix)); // placeholder
                     listVal.push_back(ZeroBlock);
                 }
@@ -49,14 +50,16 @@ void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd)
 
     int prefixNum = static_cast<int>(std::ceil(std::log2(delta * 2 + 1)));
     int prefixLen = static_cast<int>(std::floor(std::log2(delta * 2 + 1))) + 1;
-    int interSize = cmd.getOr("nn", 4);
+    u64 interSize = cmd.getOr("inter", 4ull);
 
     PRNG prng(sysRandomSeed());
-    std::vector<std::vector<u64>> recvSet;
+    PointSet recvSet(0, d);
+    recvSet.reserve(n);
     std::vector<block> recvListKey;
     std::vector<block> recvListVal;
     std::vector<block> rand_R(n);
-    std::vector<std::vector<u64>> sendSet;
+    PointSet sendSet(0, d);
+    sendSet.reserve(n);
     std::vector<block> rand_S(n);
 
     for (u64 i = 0; i < n; i++) {
@@ -77,18 +80,14 @@ void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd)
         recvSet.push_back(tmp);
     }
 
-    std::vector<u64> interIndices;
-    while (interIndices.size() < interSize) {
-        u64 idx = prng.get<u64>() % n;
-        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
-            interIndices.push_back(idx);
-        }
-    }
+    auto interIndices = sampleUniqueIndices(n, interSize, prng);
+    auto recvInterIndices = sampleUniqueIndices(n, interSize, prng);
 
     for (u64 i = 0; i < interSize; i++) {
-        u64 idx = interIndices[i];
+        const u64 sendIdx = interIndices[i];
+        const u64 recvIdx = recvInterIndices[i];
         for (u64 j = 0; j < d; j++) {
-            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (delta + 1));
+            recvSet[recvIdx][j] = sendSet[sendIdx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (delta + 1));
         }
     }
 
@@ -115,7 +114,8 @@ void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd)
             for (int j = 0; j < d; j++) {
                 auto prefixes = getIntervalPrefixSet(recvSet[i][j] - delta, recvSet[i][j] + delta, prefixLenMapNaive.at(2 * delta));
                 for (auto prefix : prefixes) {
-                    for (auto neighbor : neighbors) {
+                    for (u64 z = 0; z < neighbors.size(); ++z) {
+                        auto neighbor = neighbors[z];
                         recvListKey.push_back(blake3_hash(neighbor, j, prefix)); // placeholder
                         recvListVal.push_back(ZeroBlock);
                     }
@@ -123,7 +123,8 @@ void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd)
             }
         }
 
-        while (recvListKey.size() < n * d * prefixNum) {
+        const u64 okvsItemCount = (u64 { 1 } << d) * n * d * prefixNum;
+        while (recvListKey.size() < okvsItemCount) {
             recvListKey.push_back(prng.get<block>());
             recvListVal.push_back(prng.get<block>());
         }
@@ -225,74 +226,11 @@ void fuzzyPsiUniqueBlockPxL0(const oc::CLP &cmd)
 
         time.setTimePoint("EQT done");
 
-        std::thread sendOT([&] {
-            SilentOtExtSender send;
-            send.configure(n, 128);
-            send.mMultType = type;
-
-            coproto::sync_wait(send.genSilentBaseOts(prng, sock[0]));
-
-            std::vector<std::array<block, 2>> messages(n);
-
-            coproto::sync_wait(send.send(messages, prng, sock[0]));
-
-            std::vector<block> correctMessages(n * d / 2 * 2);
-            PRNG prng0, prng1;
-            for (int i = 0; i < n; i++) {
-                prng0.SetSeed(messages[i][0]);
-                prng1.SetSeed(messages[i][1]);
-                for (int j = 0; j < d / 2; j++) {
-                    correctMessages[i * d + j * 2] = prng0.get<block>();
-                    correctMessages[i * d + j * 2 + 1] = block(sendSet[i][j * 2], sendSet[i][j * 2 + 1]) ^ prng0.get<block>();
-                }
-            }
-            coproto::sync_wait(sock[0].send(correctMessages));
-        });
-
         std::vector<std::vector<block>> matches;
-
-        std::thread recvOT([&] {
-            SilentOtExtReceiver recv;
-            recv.configure(n, 128);
-            recv.mMultType = type;
-
-            coproto::sync_wait(recv.genSilentBaseOts(prng, sock[1]));
-
-            std::vector<block> messages(n);
-            BitVector choices(choiceBit.data(), choiceBit.size());
-
-            coproto::sync_wait(recv.receive(choices, messages, prng, sock[1]));
-
-            std::vector<block> correctMessages(n * d / 2 * 2);
-            coproto::sync_wait(sock[1].recv(correctMessages));
-
-            PRNG prng;
-            for (int i = 0; i < n; i++) {
-                if (choiceBit[i]) {
-                    prng.SetSeed(messages[i]);
-                    std::vector<block> element;
-                    for (int j = 0; j < d / 2; j++) {
-                        block val = prng.get<block>() ^ correctMessages[i * d + j * 2 + 1];
-                        element.push_back(val);
-                    }
-                    matches.push_back(element);
-                }
-            }
-        });
-
-        sendOT.join();
-        recvOT.join();
+        transferElements(sendSet, choiceBit, matches, sock);
 
         if (LOG) {
-            for (int i = 0; i < choiceBit.size(); i++) {
-                if (choiceBit[i]) {
-                    std::cout << "intersection at index " << i << std::endl;
-                }
-                if (choiceBit[i] && std::find(interIndices.begin(), interIndices.end(), i) == interIndices.end()) {
-                    throw runtime_error("false positive in fuzzyPsi");
-                }
-            }
-            std::cout << "All matches found!" << std::endl;
+            correctCheck(choiceBit, interIndices);
         }
     }
 
@@ -318,7 +256,7 @@ void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd)
     int delta = cmd.getOr("delta", 2);
     int lp = cmd.getOr("p", 2);
     int LOG = cmd.getOr("v", 0);
-    u64 delta_p = std::pow(delta, lp);
+    u64 delta_p = integerPow(delta, lp);
 
     int numTry = cmd.getOr("try", 1);
 
@@ -331,14 +269,16 @@ void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd)
     int prefixLenUpDown = 2 * U_prime.size();
     int prefixNumUpDown = 2 * prefixNumMapNaive.at(delta);
 
-    int interSize = cmd.getOr("nn", 4);
+    u64 interSize = cmd.getOr("inter", 4ull);
 
     PRNG prng(sysRandomSeed());
-    std::vector<std::vector<u64>> recvSet;
+    PointSet recvSet(0, d);
+    recvSet.reserve(n);
     std::vector<block> recvListKey;
     std::vector<block> recvListVal;
     std::vector<block> rand_R(n);
-    std::vector<std::vector<u64>> sendSet;
+    PointSet sendSet(0, d);
+    sendSet.reserve(n);
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
     std::vector<block> rand_S(n);
@@ -361,20 +301,16 @@ void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd)
         recvSet.push_back(tmp);
     }
 
-    std::vector<u64> interIndices;
-    while (interIndices.size() < interSize) {
-        u64 idx = prng.get<u64>() % n;
-        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
-            interIndices.push_back(idx);
-        }
-    }
+    auto interIndices = sampleUniqueIndices(n, interSize, prng);
+    auto recvInterIndices = sampleUniqueIndices(n, interSize, prng);
 
     int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
 
     for (u64 i = 0; i < interSize; i++) {
-        u64 idx = interIndices[i];
+        const u64 sendIdx = interIndices[i];
+        const u64 recvIdx = recvInterIndices[i];
         for (u64 j = 0; j < d; j++) {
-            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+            recvSet[recvIdx][j] = sendSet[sendIdx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
         }
     }
 
@@ -561,13 +497,14 @@ void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd)
                     for (auto &p : prefixes0) {
                         auto upbound = upBound(p);
                         for (int batch = 0; batch < OkvsBatch; batch++) {
-                            for (auto neighbor : neighbors) {
+                            for (u64 z = 0; z < neighbors.size(); ++z) {
+                                auto neighbor = neighbors[z];
                                 block key = blake3_hash(neighbor, (j << 8) | (batch << 6) | (0 << 4), p);
                                 block val = ZeroBlock;
                                 if (batch == 0) {
-                                    val = block(0, std::pow(recvSet[i][j] - upbound, batch + 1));
+                                    val = block(0, integerPow(recvSet[i][j] - upbound, batch + 1));
                                 } else {
-                                    val = block(std::pow(recvSet[i][j] - upbound, batch + 1), 0);
+                                    val = block(integerPow(recvSet[i][j] - upbound, batch + 1), 0);
                                 }
                                 filterKey.push_back(key);
                                 filterVal.push_back(val);
@@ -577,13 +514,14 @@ void fuzzyPsiUniqueBlockPxLp(const oc::CLP &cmd)
                     for (auto &p : prefixes1) {
                         auto upbound = upBound(p);
                         for (int batch = 0; batch < OkvsBatch; batch++) {
-                            for (auto neighbor : neighbors) {
+                            for (u64 z = 0; z < neighbors.size(); ++z) {
+                                auto neighbor = neighbors[z];
                                 block key = blake3_hash(neighbor, (j << 8) | (batch << 6) | (1 << 4), p);
                                 block val = ZeroBlock;
                                 if (batch == 0) {
-                                    val = block(0, std::pow(upbound - recvSet[i][j], batch + 1));
+                                    val = block(0, integerPow(upbound - recvSet[i][j], batch + 1));
                                 } else {
-                                    val = block(std::pow(upbound - recvSet[i][j], batch + 1), 0);
+                                    val = block(integerPow(upbound - recvSet[i][j], batch + 1), 0);
                                 }
                                 filterKey.push_back(key);
                                 filterVal.push_back(val);
@@ -730,7 +668,7 @@ void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd)
     int delta = cmd.getOr("delta", 2);
     int lp = cmd.getOr("p", 2);
     int LOG = cmd.getOr("v", 0);
-    u64 delta_p = std::pow(delta, lp);
+    u64 delta_p = integerPow(delta, lp);
 
     int numTry = cmd.getOr("try", 1);
 
@@ -743,14 +681,16 @@ void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd)
     int prefixLenUpDown = 2 * U_prime.size();
     int prefixNumUpDown = 2 * prefixNumMapNaive.at(delta);
 
-    int interSize = cmd.getOr("nn", 4);
+    u64 interSize = cmd.getOr("inter", 4ull);
 
     PRNG prng(sysRandomSeed());
-    std::vector<std::vector<u64>> recvSet;
+    PointSet recvSet(0, d);
+    recvSet.reserve(n);
     std::vector<block> recvListKey;
     std::vector<block> recvListVal;
     std::vector<block> rand_R(n);
-    std::vector<std::vector<u64>> sendSet;
+    PointSet sendSet(0, d);
+    sendSet.reserve(n);
     std::vector<block> sendListKey;
     std::vector<block> sendListVal;
     std::vector<block> rand_S(n);
@@ -773,20 +713,16 @@ void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd)
         recvSet.push_back(tmp);
     }
 
-    std::vector<u64> interIndices;
-    while (interIndices.size() < interSize) {
-        u64 idx = prng.get<u64>() % n;
-        if (std::find(interIndices.begin(), interIndices.end(), idx) == interIndices.end()) {
-            interIndices.push_back(idx);
-        }
-    }
+    auto interIndices = sampleUniqueIndices(n, interSize, prng);
+    auto recvInterIndices = sampleUniqueIndices(n, interSize, prng);
 
     int averageDiff = (lp == 2) ? std::floor(delta * 1.0 / std::sqrt(d)) : std::floor(delta * 1.0 / d);
 
     for (u64 i = 0; i < interSize; i++) {
-        u64 idx = interIndices[i];
+        const u64 sendIdx = interIndices[i];
+        const u64 recvIdx = recvInterIndices[i];
         for (u64 j = 0; j < d; j++) {
-            recvSet[idx][j] = sendSet[idx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
+            recvSet[recvIdx][j] = sendSet[sendIdx][j] + (1 - 2 * (prng.get<u64>() % 2)) * (prng.get<u64>() % (averageDiff + 1));
         }
     }
 
@@ -963,11 +899,12 @@ void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd)
                     for (auto &p : prefixes0) {
                         auto upbound = upBound(p);
                         {
-                            for (auto neighbor : neighbors) {
+                            for (u64 z = 0; z < neighbors.size(); ++z) {
+                                auto neighbor = neighbors[z];
                                 block key = blake3_hash(neighbor, (j << 8) | (0 << 4), p);
                                 block val = ZeroBlock;
 
-                                val = block(0, std::pow(recvSet[i][j] - upbound, 0 + 1));
+                                val = block(0, recvSet[i][j] - upbound);
 
                                 filterKey.push_back(key);
                                 filterVal.push_back(val);
@@ -977,11 +914,12 @@ void fuzzyPsiUniqueBlockPxAugLp(const oc::CLP &cmd)
                     for (auto &p : prefixes1) {
                         auto upbound = upBound(p);
                         {
-                            for (auto neighbor : neighbors) {
+                            for (u64 z = 0; z < neighbors.size(); ++z) {
+                                auto neighbor = neighbors[z];
                                 block key = blake3_hash(neighbor, (j << 8) | (1 << 4), p);
                                 block val = ZeroBlock;
 
-                                val = block(0, std::pow(upbound - recvSet[i][j], 0 + 1));
+                                val = block(0, upbound - recvSet[i][j]);
 
                                 filterKey.push_back(key);
                                 filterVal.push_back(val);

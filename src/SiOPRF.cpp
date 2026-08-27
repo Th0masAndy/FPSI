@@ -21,7 +21,7 @@ SiOPRFSender::SiOPRFSender(
     // AltModPrf::KeyType kk;
 
     ole = new CorGenerator();
-    ole->init(socket->fork(), *prng, 0, 1, std::max(u64(1024), num << 9), 0);
+    ole->init(socket->fork(), *prng, 0, 1, std::max(u64(1024), oc::roundUpTo(num, 128) << 9), 0);
 
     std::vector<oc::block> rk1(AltModPrf::KeySize);
     std::vector<std::array<oc::block, 2>> sk0(AltModPrf::KeySize);
@@ -70,7 +70,7 @@ SiOPRFRecver::SiOPRFRecver(
     // AltModPrf::KeyType kk;
 
     ole = new CorGenerator();
-    ole->init(socket->fork(), *prng, 1, 1, std::max(u64(1024), num << 9), 0);
+    ole->init(socket->fork(), *prng, 1, 1, std::max(u64(1024), oc::roundUpTo(num, 128) << 9), 0);
 
     std::vector<oc::block> rk0(AltModPrf::KeySize);
     std::vector<std::array<oc::block, 2>> sk1(AltModPrf::KeySize);
