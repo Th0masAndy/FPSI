@@ -20,6 +20,7 @@ void printHelp(const char *program)
         << "  -p <0|1|2>         metric: 0 = linf (default), 1 = l1, 2 = l2\n"
         << "  -assumption <0|1>  one-sided assumption: 0 = unique cell (default), 1 = unique block\n"
         << "  -prefix            enable prefix optimization; delta must be a power of two\n"
+        << "  -opt               use the optimized unique-cell prefix Lp variant\n"
         << "  -sender            use the sender-sided one-sided protocol\n"
         << "  -n <integer>       input set size\n"
         << "  -nn <integer>      log2 input set size (default: 10)\n"
@@ -56,13 +57,23 @@ void runOneSidedSender(const FpsiConfig &config, int assumption, bool prefix)
     }
 }
 
-void runOneSidedReceiver(const FpsiConfig &config, int assumption, bool prefix)
+void runOneSidedReceiver(
+    const FpsiConfig &config,
+    int assumption,
+    bool prefix,
+    bool optimized)
 {
     if (assumption == 0) {
         if (config.metric == 0) {
             prefix ? fuzzyPsiUniqueCellPxL0(config) : fuzzyPsiUniqueCellL0(config);
         } else {
-            prefix ? fuzzyPsiUniqueCellPxLp(config) : fuzzyPsiUniqueCellLp(config);
+            if (prefix) {
+                optimized
+                    ? fuzzyPsiUniqueCellPxLpOpt(config)
+                    : fuzzyPsiUniqueCellPxLp(config);
+            } else {
+                fuzzyPsiUniqueCellLp(config);
+            }
         }
         return;
     }
@@ -106,6 +117,7 @@ int main(int argc, char **argv)
     const int type = cmd.getOr("type", 0);
     const int assumption = cmd.getOr("assumption", 0);
     const bool prefix = cmd.isSet("prefix");
+    const bool optimized = cmd.isSet("opt");
     const bool sender = cmd.isSet("sender");
     LOG = config.verbose;
 
@@ -118,7 +130,8 @@ int main(int argc, char **argv)
         if (sender) {
             runOneSidedSender(config, assumption, prefix);
         } else {
-            runOneSidedReceiver(config, assumption, prefix);
+            runOneSidedReceiver(
+                config, assumption, prefix, optimized);
         }
         return 0;
     }
