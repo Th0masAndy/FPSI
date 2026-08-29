@@ -1,28 +1,27 @@
 #include "SoOPPRF.h"
-#include <algorithm>
-#include <coproto/Common/macoro.h>
+#include <thread>
 #include "SoOPRF.h"
+#include "common.h"
 
 namespace {
 
-constexpr u64 kBlocksPerChunk = 1ULL << 20;
+struct SoOpprfRoles {
+    coproto::Socket *sendSocket;
+    coproto::Socket *recvSocket;
+    std::vector<oc::block> *sendOutput;
+    std::vector<oc::block> *recvOutput;
+};
 
-void sendBlocks(coproto::Socket &socket, const std::vector<oc::block> &blocks)
+SoOpprfRoles resolveRoles(
+    std::vector<oc::block> &recvShares,
+    std::vector<oc::block> &sendShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
 {
-    for (u64 offset = 0; offset < blocks.size(); offset += kBlocksPerChunk) {
-        const u64 size = std::min<u64>(blocks.size() - offset, kBlocksPerChunk);
-        coproto::span<const oc::block> chunk(blocks.data() + offset, size);
-        coproto::sync_wait(socket.send(chunk));
+    if (roleInverse) {
+        return { &sockets[1], &sockets[0], &recvShares, &sendShares };
     }
-}
-
-void recvBlocks(coproto::Socket &socket, std::vector<oc::block> &blocks)
-{
-    for (u64 offset = 0; offset < blocks.size(); offset += kBlocksPerChunk) {
-        const u64 size = std::min<u64>(blocks.size() - offset, kBlocksPerChunk);
-        coproto::span<oc::block> chunk(blocks.data() + offset, size);
-        coproto::sync_wait(socket.recv(chunk));
-    }
+    return { &sockets[0], &sockets[1], &sendShares, &recvShares };
 }
 
 } // namespace
@@ -107,4 +106,54 @@ void SoOPPRFRecver::OPPRF(std::vector<oc::block> &keys, std::vector<oc::block> &
     for (u64 i = 0; i < keys.size(); i++) {
         y1[i] ^= tmp[i];
     }
+}
+
+void runSoOpprf(
+    std::vector<oc::block> &keys,
+    std::vector<oc::block> &values,
+    std::vector<oc::block> &queryKeys,
+    std::vector<oc::block> &recvShares,
+    std::vector<oc::block> &sendShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    auto roles = resolveRoles(recvShares, sendShares, sockets, roleInverse);
+
+    std::thread sendParty([&] {
+        SoOPPRFRecver recv(queryKeys.size(), keys.size(), 1, false, roles.recvSocket);
+        recv.OPPRF(queryKeys, *roles.recvOutput);
+    });
+
+    std::thread recvParty([&] {
+        SoOPPRFSender send(queryKeys.size(), keys.size(), 1, false, roles.sendSocket);
+        send.OPPRF(keys, values, *roles.sendOutput);
+    });
+
+    sendParty.join();
+    recvParty.join();
+}
+
+void runSoOpprf(
+    const std::vector<oc::block> &encoding,
+    oc::u64 numKeyValues,
+    std::vector<oc::block> &queryKeys,
+    std::vector<oc::block> &recvShares,
+    std::vector<oc::block> &sendShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    auto roles = resolveRoles(recvShares, sendShares, sockets, roleInverse);
+
+    std::thread sendParty([&] {
+        SoOPPRFRecver recv(queryKeys.size(), numKeyValues, 1, false, roles.recvSocket);
+        recv.OPPRF(queryKeys, *roles.recvOutput);
+    });
+
+    std::thread recvParty([&] {
+        SoOPPRFSender send(queryKeys.size(), numKeyValues, 1, false, roles.sendSocket);
+        send.OPPRF(encoding, *roles.sendOutput);
+    });
+
+    sendParty.join();
+    recvParty.join();
 }

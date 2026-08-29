@@ -14,9 +14,9 @@ class OKVS {
 public:
     OKVS(u64 numItems, u64 weight_ = 3, u64 ssp = 40, u64 binSize_ = 1 << 14);
 
-    vector<block> encode(const vector<block> &keys, const vector<block> &values, u64 numThreads = 0);
+    vector<block> encode(const vector<block> &keys, const vector<block> &values);
 
-    void encode(const vector<block> &keys, const vector<block> &values, vector<block> &encoding, u64 numThreads = 0);
+    void encode(const vector<block> &keys, const vector<block> &values, vector<block> &encoding);
 
     vector<block> decode(const vector<block> &encoding, const vector<block> &keys, u64 numThreads = 0);
 

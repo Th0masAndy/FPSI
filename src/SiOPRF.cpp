@@ -90,9 +90,6 @@ void SiOPRFRecver::setup()
 
 void SiOPRFRecver::OPRF(std::vector<oc::block> &x1, std::vector<oc::block> &y1)
 {
-    // std::string str;
-    // coproto::sync_wait(socket[0]->recvResize(str) | macoro::start_on(*pool));
-    // std::cout << str << std::endl;
     auto r = coproto::sync_wait(coproto::when_all_ready(recver->evaluate(x1, y1, *socket, *prng), ole->start()));
 
     std::get<0>(r).result();

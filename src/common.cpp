@@ -1,5 +1,6 @@
 #include "common.h"
 #include <algorithm>
+#include <coproto/Common/macoro.h>
 #include <coproto/Socket/AsioSocket.h>
 #include <format>
 #include <iostream>
@@ -11,6 +12,42 @@
 
 using namespace oc;
 using namespace std;
+
+void sendBytes(coproto::Socket &socket, const std::vector<u8> &bytes)
+{
+    for (u64 offset = 0; offset < bytes.size(); offset += kBytesPerChunk) {
+        const u64 size = std::min<u64>(bytes.size() - offset, kBytesPerChunk);
+        coproto::span<const u8> chunk(bytes.data() + offset, size);
+        coproto::sync_wait(socket.send(chunk));
+    }
+}
+
+void recvBytes(coproto::Socket &socket, std::vector<u8> &bytes)
+{
+    for (u64 offset = 0; offset < bytes.size(); offset += kBytesPerChunk) {
+        const u64 size = std::min<u64>(bytes.size() - offset, kBytesPerChunk);
+        coproto::span<u8> chunk(bytes.data() + offset, size);
+        coproto::sync_wait(socket.recv(chunk));
+    }
+}
+
+void sendBlocks(coproto::Socket &socket, const std::vector<block> &blocks)
+{
+    for (u64 offset = 0; offset < blocks.size(); offset += kBlocksPerChunk) {
+        const u64 size = std::min<u64>(blocks.size() - offset, kBlocksPerChunk);
+        coproto::span<const block> chunk(blocks.data() + offset, size);
+        coproto::sync_wait(socket.send(chunk));
+    }
+}
+
+void recvBlocks(coproto::Socket &socket, std::vector<block> &blocks)
+{
+    for (u64 offset = 0; offset < blocks.size(); offset += kBlocksPerChunk) {
+        const u64 size = std::min<u64>(blocks.size() - offset, kBlocksPerChunk);
+        coproto::span<block> chunk(blocks.data() + offset, size);
+        coproto::sync_wait(socket.recv(chunk));
+    }
+}
 
 void transferElements(
     const PointSet &set, std::vector<u8> &choiceBits, std::vector<std::vector<block>> &matches, std::array<coproto::AsioSocket, 2> &sock)

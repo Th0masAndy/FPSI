@@ -286,13 +286,11 @@ void MillionaireProtocolSender::traverse_and_compute_ANDs(
     u8 *ci = reinterpret_cast<uint8_t *>(C.data());
 
 #elif defined(WAN_EXEC)
-    // std::cout<<"Running on WAN_EXEC; Skipping correlated triples"<<std::endl;
     triple_gen->generate(party, &triples_std, _16KKOT_to_4OT);
 #else
     triple_gen->generate(party, &triples_corr, _8KKOT);
     triple_gen->generate(party, &triples_std, _16KKOT_to_4OT);
 #endif
-    // std::cout << "Bit Triples Generated" << std::endl;
 
     // Combine leaf OT results in a bottom-up fashion
     int counter_std = 0, old_counter_std = 0;
@@ -640,13 +638,11 @@ void MillionaireProtocolRecver::traverse_and_compute_ANDs(
     u8 *ci = reinterpret_cast<uint8_t *>(C.data());
 
 #elif defined(WAN_EXEC)
-    // std::cout<<"Running on WAN_EXEC; Skipping correlated triples"<<std::endl;
     triple_gen->generate(party, &triples_std, _16KKOT_to_4OT);
 #else
     triple_gen->generate(party, &triples_corr, _8KKOT);
     triple_gen->generate(party, &triples_std, _16KKOT_to_4OT);
 #endif
-    // std::cout << "Bit Triples Generated" << std::endl;
 
     // Combine leaf OT results in a bottom-up fashion
     int counter_std = 0, old_counter_std = 0;

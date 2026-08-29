@@ -1,10 +1,19 @@
 #pragma once
 
+#include <array>
+#include <coproto/Socket/AsioSocket.h>
 #include <cstdint>
+#include <vector>
 #include "OKVS.h"
 #include "SoOPRF.h"
 
 extern bool LOG;
+
+struct SoOpprfInput {
+    std::vector<oc::block> keys;
+    std::vector<oc::block> values;
+    std::vector<oc::block> queryKeys;
+};
 
 class SoOPPRFSender : public SoOPRFSender {
 public:
@@ -31,3 +40,21 @@ public:
 private:
     OKVS *okvs;
 };
+
+void runSoOpprf(
+    std::vector<oc::block> &keys,
+    std::vector<oc::block> &values,
+    std::vector<oc::block> &queryKeys,
+    std::vector<oc::block> &recvShares,
+    std::vector<oc::block> &sendShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse = false);
+
+void runSoOpprf(
+    const std::vector<oc::block> &encoding,
+    oc::u64 numKeyValues,
+    std::vector<oc::block> &queryKeys,
+    std::vector<oc::block> &recvShares,
+    std::vector<oc::block> &sendShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse = false);

@@ -8,6 +8,7 @@
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/PRNG.h>
 #include <sys/types.h>
+#include <thread>
 #include <vector>
 #include <volePSI/Defines.h>
 #include <volePSI/GMW/Circuit.h>
@@ -74,45 +75,6 @@ MuxSender::~MuxSender()
     delete sender;
     delete recver;
     delete prng;
-}
-
-BitVector MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0)
-{
-    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
-
-    BitVector b0(num);
-    ssPEQT(1, u0, b0, *socket, 1);
-
-    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
-    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
-
-    std::vector<std::array<block, 2>> messages(num);
-    coproto::sync_wait(sender->send(messages, *prng, *socket));
-
-    std::vector<block> correctMessages(num);
-
-    for (u64 i = 0; i < num; i++) {
-        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v0[i];
-    }
-
-    coproto::sync_wait(socket->send(correctMessages));
-
-    coproto::sync_wait(recver->receive(b0, res0, *prng, *socket));
-
-    std::vector<block> correctMessages1(num);
-
-    coproto::sync_wait(socket->recv(correctMessages1));
-
-    for (u64 i = 0; i < num; i++) {
-        res0[i] = res0[i] ^ (b0[i] ? correctMessages1[i] : block(0, 0));
-        res0[i] = res0[i] ^ messages[i][0];
-        res0[i] = res0[i] ^ (b0[i] ? v0[i] : block(0, 0));
-    }
-
-    auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    // std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
-
-    return b0;
 }
 
 BitVector MuxSender::EqRand(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0)
@@ -211,10 +173,10 @@ BitVector MuxSender::CmpRand(std::vector<u64> &u0, std::vector<block> &v0, std::
     return b0;
 }
 
-void MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 len)
+void MuxSender::EqSel(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 len)
 {
     std::vector<block> temp(v0.size());
-    BitVector b0 = mux(u0, v0, temp);
+    BitVector b0 = EqRand(u0, v0, temp);
 
     u64 outputLen = v0.size() / len;
     BitVector b0_sum(outputLen);
@@ -239,7 +201,7 @@ void MuxSender::mux(std::vector<block> &u0, std::vector<block> &v0, std::vector<
     }
 }
 
-void MuxSender::mux(std::vector<block> &u0, std::vector<block> &res0, u64 len)
+void MuxSender::EqSel(std::vector<block> &u0, std::vector<block> &res0, u64 len)
 {
     BitVector b0(u0.size());
     ssPEQT(1, u0, b0, *socket, 1);
@@ -268,9 +230,8 @@ void MuxSender::mux(std::vector<block> &u0, std::vector<block> &res0, u64 len)
     }
 }
 
-BitVector MuxSender::muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0)
+BitVector MuxSender::EqRand(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0)
 {
-    auto curr_comm = socket->bytesReceived() + socket->bytesSent();
 
     BitVector b0(num);
     ssPEQT(1, u0, b0, *socket, 1);
@@ -303,16 +264,13 @@ BitVector MuxSender::muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vec
         res0[i] = res0[i] - low(messages[i][0]);
     }
 
-    auto end_comm = socket->bytesReceived() + socket->bytesSent();
-    // std::cout << "mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
-
     return b0;
 }
 
-void MuxSender::muxA(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0, u64 len)
+void MuxSender::EqSel(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0, u64 len)
 {
     std::vector<u64> temp(v0.size());
-    BitVector b0 = muxA(u0, v0, temp);
+    BitVector b0 = EqRand(u0, v0, temp);
 
     u64 outputLen = v0.size() / len;
     BitVector b0_sum(outputLen);
@@ -355,40 +313,6 @@ MuxRecver::~MuxRecver()
     delete sender;
     delete recver;
     delete prng;
-}
-
-BitVector MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1)
-{
-    BitVector b1(num);
-    ssPEQT(0, u1, b1, *socket, 1);
-
-    coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));
-    coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
-
-    coproto::sync_wait(recver->receive(b1, res1, *prng, *socket));
-
-    std::vector<block> correctMessages1(num);
-
-    coproto::sync_wait(socket->recv(correctMessages1));
-
-    std::vector<std::array<block, 2>> messages(num);
-    coproto::sync_wait(sender->send(messages, *prng, *socket));
-
-    std::vector<block> correctMessages(num);
-
-    for (u64 i = 0; i < num; i++) {
-        correctMessages[i] = messages[i][0] ^ messages[i][1] ^ v1[i];
-    }
-
-    coproto::sync_wait(socket->send(correctMessages));
-
-    for (u64 i = 0; i < num; i++) {
-        res1[i] = res1[i] ^ (b1[i] ? correctMessages1[i] : block(0, 0));
-        res1[i] = res1[i] ^ messages[i][0];
-        res1[i] = res1[i] ^ (b1[i] ? v1[i] : block(0, 0));
-    }
-
-    return b1;
 }
 
 BitVector MuxRecver::EqRand(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1)
@@ -467,10 +391,10 @@ BitVector MuxRecver::CmpRand(std::vector<u64> &u1, std::vector<block> &v1, std::
     return b1;
 }
 
-void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1, u64 len)
+void MuxRecver::EqSel(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1, u64 len)
 {
     std::vector<block> temp(v1.size());
-    BitVector b1 = mux(u1, v1, temp);
+    BitVector b1 = EqRand(u1, v1, temp);
 
     u64 outputLen = v1.size() / len;
     BitVector b1_sum(outputLen);
@@ -495,7 +419,7 @@ void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &v1, std::vector<
     }
 }
 
-void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &res1, u64 len)
+void MuxRecver::EqSel(std::vector<block> &u1, std::vector<block> &res1, u64 len)
 {
     BitVector b1(u1.size());
     ssPEQT(0, u1, b1, *socket, 1);
@@ -520,7 +444,7 @@ void MuxRecver::mux(std::vector<block> &u1, std::vector<block> &res1, u64 len)
     }
 }
 
-BitVector MuxRecver::muxA(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1)
+BitVector MuxRecver::EqRand(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1)
 {
     BitVector b1(num);
     ssPEQT(0, u1, b1, *socket, 1);
@@ -556,10 +480,10 @@ BitVector MuxRecver::muxA(std::vector<block> &u1, std::vector<u64> &v1, std::vec
     return b1;
 }
 
-void MuxRecver::muxA(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1, u64 len)
+void MuxRecver::EqSel(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1, u64 len)
 {
     std::vector<u64> temp(v1.size());
-    BitVector b1 = muxA(u1, v1, temp);
+    BitVector b1 = EqRand(u1, v1, temp);
 
     u64 outputLen = v1.size() / len;
     BitVector b1_sum(outputLen);
@@ -582,4 +506,52 @@ void MuxRecver::muxA(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u
         }
         res1[i] = res1[i] + low(message[i]) - (b1_sum[i] ? low(messages[i][0]) : low(messages[i][1]));
     }
+}
+
+void runEqSel(
+    std::vector<block> &sendSelectors,
+    std::vector<block> &recvSelectors,
+    std::vector<block> &sendResults,
+    std::vector<block> &recvResults,
+    u64 len,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    const size_t sendSocket = roleInverse ? 1 : 0;
+    const size_t recvSocket = roleInverse ? 0 : 1;
+    std::thread send([&] {
+        MuxSender mux(sendResults.size(), &sockets[sendSocket]);
+        mux.EqSel(sendSelectors, sendResults, len);
+    });
+    std::thread recv([&] {
+        MuxRecver mux(recvResults.size(), &sockets[recvSocket]);
+        mux.EqSel(recvSelectors, recvResults, len);
+    });
+    send.join();
+    recv.join();
+}
+
+void runEqSel(
+    std::vector<block> &sendSelectors,
+    std::vector<block> &recvSelectors,
+    std::vector<u64> &sendValues,
+    std::vector<u64> &recvValues,
+    std::vector<u64> &sendResults,
+    std::vector<u64> &recvResults,
+    u64 len,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    const size_t sendSocket = roleInverse ? 1 : 0;
+    const size_t recvSocket = roleInverse ? 0 : 1;
+    std::thread send([&] {
+        MuxSender mux(sendSelectors.size(), &sockets[sendSocket]);
+        mux.EqSel(sendSelectors, sendValues, sendResults, len);
+    });
+    std::thread recv([&] {
+        MuxRecver mux(recvSelectors.size(), &sockets[recvSocket]);
+        mux.EqSel(recvSelectors, recvValues, recvResults, len);
+    });
+    send.join();
+    recv.join();
 }

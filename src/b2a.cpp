@@ -2,7 +2,9 @@
 #include <cryptoTools/Common/BitVector.h>
 #include <cryptoTools/Common/block.h>
 #include <cstring>
+#include <thread>
 #include <vector>
+#include "common.h"
 #include "utils.h"
 
 using namespace oc;
@@ -10,25 +12,6 @@ using namespace oc;
 namespace {
 
 constexpr u64 kCompressedBytesPerValue = 288;
-constexpr u64 kIoChunkBytes = 1ULL << 30;
-
-void sendBytes(coproto::Socket &socket, std::vector<u8> &bytes)
-{
-    for (u64 offset = 0; offset < bytes.size(); offset += kIoChunkBytes) {
-        const u64 size = std::min<u64>(bytes.size() - offset, kIoChunkBytes);
-        coproto::span<u8> chunk(bytes.data() + offset, size);
-        coproto::sync_wait(socket.send(chunk));
-    }
-}
-
-void recvBytes(coproto::Socket &socket, std::vector<u8> &bytes)
-{
-    for (u64 offset = 0; offset < bytes.size(); offset += kIoChunkBytes) {
-        const u64 size = std::min<u64>(bytes.size() - offset, kIoChunkBytes);
-        coproto::span<u8> chunk(bytes.data() + offset, size);
-        coproto::sync_wait(socket.recv(chunk));
-    }
-}
 
 } // namespace
 
@@ -135,4 +118,26 @@ void B2aRecver::b2a(std::vector<block> &blk, std::vector<u64> &val)
             val[i / 64] += (u64(choiceBit[i]) - 2 * ((low(messages[i]) << shift) >> shift)) << shift;
         }
     }
+}
+
+void runB2a(
+    std::vector<block> &sendShares,
+    std::vector<block> &recvShares,
+    std::vector<u64> &sendArithShares,
+    std::vector<u64> &recvArithShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    const size_t sendSocket = roleInverse ? 1 : 0;
+    const size_t recvSocket = roleInverse ? 0 : 1;
+    std::thread send([&] {
+        B2aSender b2a(sendShares.size(), &sockets[sendSocket]);
+        b2a.b2a(sendShares, sendArithShares);
+    });
+    std::thread recv([&] {
+        B2aRecver b2a(recvShares.size(), &sockets[recvSocket]);
+        b2a.b2a(recvShares, recvArithShares);
+    });
+    send.join();
+    recv.join();
 }

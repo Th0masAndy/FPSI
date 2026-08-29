@@ -5,8 +5,7 @@
 #include "cmp.h"
 #include "common.h"
 #include "cryptoTools/Common/CLP.h"
-#include "fpsi.h"
-#include "fpsi_low.h"
+#include "protocol.h"
 
 bool LOG = false;
 
@@ -44,45 +43,45 @@ bool helpRequested(int argc, char **argv)
     return false;
 }
 
-void runOneSidedSender(const oc::CLP &cmd, int lp, int assumption, bool prefix)
+void runOneSidedSender(const FpsiConfig &config, int assumption, bool prefix)
 {
     if (assumption != 0 || prefix) {
         return;
     }
 
-    if (lp == 0) {
-        fuzzyPsiUniqueCellSenderL0(cmd);
+    if (config.metric == 0) {
+        fuzzyPsiUniqueCellSenderL0(config);
     } else {
-        fuzzyPsiUniqueCellSenderLp(cmd);
+        fuzzyPsiUniqueCellSenderLp(config);
     }
 }
 
-void runOneSidedReceiver(const oc::CLP &cmd, int lp, int assumption, bool prefix)
+void runOneSidedReceiver(const FpsiConfig &config, int assumption, bool prefix)
 {
     if (assumption == 0) {
-        if (lp == 0) {
-            prefix ? fuzzyPsiUniqueCellPxL0(cmd) : fuzzyPsiUniqueCellL0(cmd);
+        if (config.metric == 0) {
+            prefix ? fuzzyPsiUniqueCellPxL0(config) : fuzzyPsiUniqueCellL0(config);
         } else {
-            prefix ? fuzzyPsiUniqueCellPxLp(cmd) : fuzzyPsiUniqueCellLp(cmd);
+            prefix ? fuzzyPsiUniqueCellPxLp(config) : fuzzyPsiUniqueCellLp(config);
         }
         return;
     }
 
     if (assumption == 1) {
-        if (lp == 0) {
-            prefix ? fuzzyPsiUniqueBlockPxL0(cmd) : fuzzyPsiUniqueBlockL0(cmd);
+        if (config.metric == 0) {
+            prefix ? fuzzyPsiUniqueBlockPxL0(config) : fuzzyPsiUniqueBlockL0(config);
         } else {
-            prefix ? fuzzyPsiUniqueBlockPxAugLp(cmd) : fuzzyPsiUniqueBlockLp(cmd);
+            prefix ? fuzzyPsiUniqueBlockPxAugLp(config) : fuzzyPsiUniqueBlockLp(config);
         }
     }
 }
 
-void runTwoSided(const oc::CLP &cmd, int lp, bool prefix)
+void runTwoSided(const FpsiConfig &config, bool prefix)
 {
-    if (lp == 0) {
-        prefix ? fuzzyPsiPrefixL0(cmd) : fuzzyPsiL0(cmd);
+    if (config.metric == 0) {
+        prefix ? fuzzyPsiPrefixL0(config) : fuzzyPsiL0(config);
     } else {
-        prefix ? fuzzyPsiPrefixLp(cmd) : fuzzyPsiLp(cmd);
+        prefix ? fuzzyPsiPrefixLp(config) : fuzzyPsiLp(config);
     }
 }
 
@@ -96,6 +95,7 @@ int main(int argc, char **argv)
     }
 
     oc::CLP cmd(argc, argv);
+    const auto config = FpsiConfig::fromCommandLine(cmd);
 
     // Protocol parameters:
     //   type       : 0 = one-sided, 1 = two-sided
@@ -104,23 +104,21 @@ int main(int argc, char **argv)
     //   assumption : 0 = unique cell (2delta), 1 = unique block (4delta), only for one-sided
     //   prefix     : enable prefix optimization
     const int type = cmd.getOr("type", 0);
-    const int lp = cmd.getOr("p", 0);
     const int assumption = cmd.getOr("assumption", 0);
     const bool prefix = cmd.isSet("prefix");
     const bool sender = cmd.isSet("sender");
-    const int delta = cmd.getOr("delta", 2);
-    LOG = cmd.getOr("v", 0);
+    LOG = config.verbose;
 
-    if (prefix && !isPowerOfTwo(delta)) {
+    if (prefix && !isPowerOfTwo(config.delta)) {
         std::cerr << "error: '-delta' must be a power of two when '-prefix' is enabled\n";
         return 2;
     }
 
     if (type == 0) {
         if (sender) {
-            runOneSidedSender(cmd, lp, assumption, prefix);
+            runOneSidedSender(config, assumption, prefix);
         } else {
-            runOneSidedReceiver(cmd, lp, assumption, prefix);
+            runOneSidedReceiver(config, assumption, prefix);
         }
         return 0;
     }
@@ -129,7 +127,7 @@ int main(int argc, char **argv)
         if (sender) {
             return 0;
         }
-        runTwoSided(cmd, lp, prefix);
+        runTwoSided(config, prefix);
     }
 
     return 0;

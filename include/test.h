@@ -293,16 +293,11 @@ int AltModWPrf_shared_test(const oc::CLP &cmd)
     th_sender.join();
     th_recver.join();
 
-    // std::cout << sock[0].bytesReceived() / 1000.0 << " " << sock[0].bytesSent() / 1000.0 << " kB " << std::endl;
-
     std::vector<block> y(x.size());
     dm_.eval(x, y);
     for (u64 ii = 0; ii < n; ++ii) {
         auto yy = (y0[ii] ^ y1[ii]);
         if (yy != y[ii]) {
-            // std::cout << "i   " << ii << std::endl;
-            // std::cout << "act " << yy << std::endl;
-            // std::cout << "exp " << y[ii] << std::endl;
             // throw RTE_LOC;
             return 0;
         }
@@ -361,9 +356,6 @@ int AltModWPrf_sharedKey_test(const oc::CLP &cmd)
         // x1[i] = x[i] & (~mask);//^ x0[i];
 
         x1[i] = x[i] ^ x0[i];
-
-        // if (i < 10)
-        //	std::cout << "x[" << i << "] " << x[i] << std::endl;
 
         if (x[i] != (x0[i] ^ x1[i]))
             throw RTE_LOC;
@@ -564,10 +556,8 @@ void simulation_2pc()
 //     for (u64 i = 0; i < idxs.size(); i++) {
 //         for (u64 j = 0; j < 3; j++) {
 //             pp[idxs[i][3]][idxs[i][j]] = sparsePart[idxs[i][3] * okvs->sparseSize + idxs[i][j]];
-//             std::cout << sparsePart[idxs[i][3] * okvs->sparseSize + idxs[i][j]] << std::endl;
 //         }
 //     }
-//     std::cout << "---------------------------------" << std::endl;
 //     okvs->decode(hashs, idxs, values, pp, 0);
 
 //     // auto as = receiver.client->extract_batch_answer(response);
@@ -580,7 +570,6 @@ void simulation_2pc()
 
 //     print_all_timers("");
 
-//     memcmp(values.data(), val.data(), decode_size * sizeof(block)) == 0 ? std::cout << "ok\n" : std::cout << "error\n";
 // }
 
 void SoOPRF_test()

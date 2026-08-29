@@ -10,6 +10,7 @@ namespace {
 
 constexpr u64 kMinItemsPerThread = 1ULL << 16;
 constexpr u64 kMaxOkvsThreads = 16;
+constexpr u64 kOkvsEncodeThreads = 1;
 
 u64 resolveThreadCount(u64 requested, u64 itemCount)
 {
@@ -30,14 +31,14 @@ OKVS::OKVS(u64 numItems, u64 weight_, u64 ssp, u64 binSize_)
     param = paxos.mPaxosParam;
 }
 
-vector<block> OKVS::encode(const vector<block> &keys, const vector<block> &values, u64 numThreads)
+vector<block> OKVS::encode(const vector<block> &keys, const vector<block> &values)
 {
     vector<block> encoding;
-    encode(keys, values, encoding, numThreads);
+    encode(keys, values, encoding);
     return encoding;
 }
 
-void OKVS::encode(const vector<block> &keys, const vector<block> &values, vector<block> &encoding, u64 numThreads)
+void OKVS::encode(const vector<block> &keys, const vector<block> &values, vector<block> &encoding)
 {
     if (keys.size() != values.size()) {
         throw std::invalid_argument("OKVS keys and values must have the same size");
@@ -45,7 +46,8 @@ void OKVS::encode(const vector<block> &keys, const vector<block> &values, vector
 
     encoding.resize(paxos.size());
     PRNG prng(sysRandomSeed());
-    paxos.solve<block>(keys, values, encoding, &prng, resolveThreadCount(numThreads, keys.size()));
+    // Baxos shares this PRNG across solve workers, but PRNG is not thread-safe.
+    paxos.solve<block>(keys, values, encoding, &prng, kOkvsEncodeThreads);
 }
 
 vector<block> OKVS::decode(const vector<block> &encoding, const vector<block> &keys, u64 numThreads)
@@ -203,7 +205,6 @@ u64 OKVS::size()
 
 //         // for (auto &vec : idxs) {
 //         //     for (auto &u : vec)
-//         //         std::cout << u << ",";
 //         // }
 
 //         decode_start = timer.setTimePoint("decode");
@@ -232,20 +233,15 @@ u64 OKVS::size()
 
 //         decode_end = timer.setTimePoint("decode");
 
-//         std::cout << "total dense size: " << paxos.mNumBins * paxos.mPaxosParam.mDenseSize * sizeof(block) / 1024.0 / 1024.0 << " MB" << std::endl;
-
 //         paxos.decodeRetrievalIdx<block>(hashs, idxs, decode_val, pp, nt);
 //     }
 
 //     if (memcmp(val.data(), decode_val.data(), decode_val.size() * sizeof(block)) != 0)
-//         std::cout << "Error: Decoded values do not match original values." << std::endl;
 
 //     if (v)
-//         std::cout << timer << std::endl;
 
 //     auto tt = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / double(1000);
 
 //     auto decode_t = std::chrono::duration_cast<std::chrono::microseconds>(decode_end - decode_start).count() / double(1000);
 
-//     std::cout << "encode " << tt << " ms, decode " << decode_t << " ms, e=" << double(baxosSize) / n << std::endl;
 // }

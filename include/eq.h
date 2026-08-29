@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <coproto/Socket/AsioSocket.h>
 #include <sys/types.h>
 #include <vector>
 #include "volePSI/RsPsi.h"
@@ -17,7 +19,7 @@ public:
     bool noCompress;
 
 private:
-    RsPsiSender *sender;
+    RsPsiSender *send;
     coproto::Socket *socket;
 };
 
@@ -32,6 +34,20 @@ public:
     bool noCompress;
 
 private:
-    RsPsiReceiver *recver;
+    RsPsiReceiver *recv;
     coproto::Socket *socket;
 };
+
+void runPeqt(
+    std::vector<block> &sendInputs,
+    std::vector<block> &recvInputs,
+    std::vector<u64> &matches,
+    std::array<coproto::AsioSocket, 2> &sockets);
+
+void runIntervalTest(
+    const std::vector<u64> &sendDis,
+    const std::vector<u64> &recvDis,
+    u64 deltaPow,
+    u64 prefixLen,
+    std::vector<u64> &matches,
+    std::array<coproto::AsioSocket, 2> &sockets);

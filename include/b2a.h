@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+#include <coproto/Socket/AsioSocket.h>
 #include <coproto/Socket/Socket.h>
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/PRNG.h>
@@ -37,3 +39,11 @@ private:
     osuCrypto::SilentOtExtReceiver *receiver;
     osuCrypto::PRNG *prng;
 };
+
+void runB2a(
+    std::vector<oc::block> &sendShares,
+    std::vector<oc::block> &recvShares,
+    std::vector<oc::u64> &sendArithShares,
+    std::vector<oc::u64> &recvArithShares,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse = false);
