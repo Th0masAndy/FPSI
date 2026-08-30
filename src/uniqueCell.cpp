@@ -327,6 +327,7 @@ SelectedPrefixShares selectPrefixShares(
     SplitShares &recvSplit,
     const std::vector<u64> &localOffsets,
     u64 groupSize,
+    u64 fallbackDistance,
     std::array<coproto::AsioSocket, 2> &sockets)
 {
     const u64 candidateCount = sendSplit.highShares.size();
@@ -352,7 +353,7 @@ SelectedPrefixShares selectPrefixShares(
     const u64 selectedCount = candidateCount / groupSize;
     std::vector<block> sendSelected(selectedCount);
     std::vector<block> recvSelected(selectedCount);
-    runEqSel(
+    runEqConstant(
         sendSplit.highShares,
         recvSplit.highShares,
         sendValues,
@@ -360,6 +361,7 @@ SelectedPrefixShares selectPrefixShares(
         sendSelected,
         recvSelected,
         groupSize,
+        block(fallbackDistance, 0),
         sockets);
 
     SelectedPrefixShares result {
@@ -978,8 +980,9 @@ void fuzzyPsiUniqueCellPxLpOpt(const FpsiConfig &config)
             recvSplit,
             input.localOffsets,
             input.groupSize,
+            config.delta + 1,
             sockets);
-        timer.setTimePoint("EqSel done");
+        timer.setTimePoint("EqConstant done");
 
         const u64 selectedCount = selected.sendAlpha.size();
         std::vector<block> sendBooleanShares(2 * selectedCount);

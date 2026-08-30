@@ -213,6 +213,30 @@ void MuxSender::EqSel(std::vector<block> &u0, std::vector<block> &v0, std::vecto
     }
 }
 
+void MuxSender::EqConstant(
+    std::vector<block> &u0,
+    std::vector<block> &v0,
+    std::vector<block> &res0,
+    u64 len,
+    block constant)
+{
+    std::vector<block> temp(v0.size());
+    BitVector b0 = Mux(u0, v0, temp);
+
+    const u64 outputLen = v0.size() / len;
+    for (u64 i = 0; i < outputLen; ++i) {
+        bool selected = false;
+        for (u64 j = 0; j < len; ++j) {
+            const u64 index = i * len + j;
+            selected ^= b0[index];
+            res0[i] ^= temp[index];
+        }
+        if (!selected) {
+            res0[i] ^= constant;
+        }
+    }
+}
+
 void MuxSender::EqSel(std::vector<block> &u0, std::vector<block> &res0, u64 len)
 {
     BitVector b0(u0.size());
@@ -443,6 +467,30 @@ void MuxRecver::EqSel(std::vector<block> &u1, std::vector<block> &v1, std::vecto
     }
 }
 
+void MuxRecver::EqConstant(
+    std::vector<block> &u1,
+    std::vector<block> &v1,
+    std::vector<block> &res1,
+    u64 len,
+    block constant)
+{
+    std::vector<block> temp(v1.size());
+    BitVector b1 = Mux(u1, v1, temp);
+
+    const u64 outputLen = v1.size() / len;
+    for (u64 i = 0; i < outputLen; ++i) {
+        bool selected = false;
+        for (u64 j = 0; j < len; ++j) {
+            const u64 index = i * len + j;
+            selected ^= b1[index];
+            res1[i] ^= temp[index];
+        }
+        if (selected) {
+            res1[i] ^= constant;
+        }
+    }
+}
+
 void MuxRecver::EqSel(std::vector<block> &u1, std::vector<block> &res1, u64 len)
 {
     BitVector b1(u1.size());
@@ -554,6 +602,34 @@ void runEqSel(
         MuxRecver mux(recvSelectors.size(), &sockets[recvSocket]);
         mux.EqSel(
             recvSelectors, recvValues, recvResults, len);
+    });
+    send.join();
+    recv.join();
+}
+
+void runEqConstant(
+    std::vector<block> &sendSelectors,
+    std::vector<block> &recvSelectors,
+    std::vector<block> &sendValues,
+    std::vector<block> &recvValues,
+    std::vector<block> &sendResults,
+    std::vector<block> &recvResults,
+    u64 len,
+    block constant,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    const size_t sendSocket = roleInverse ? 1 : 0;
+    const size_t recvSocket = roleInverse ? 0 : 1;
+    std::thread send([&] {
+        MuxSender mux(sendSelectors.size(), &sockets[sendSocket]);
+        mux.EqConstant(
+            sendSelectors, sendValues, sendResults, len, constant);
+    });
+    std::thread recv([&] {
+        MuxRecver mux(recvSelectors.size(), &sockets[recvSocket]);
+        mux.EqConstant(
+            recvSelectors, recvValues, recvResults, len, constant);
     });
     send.join();
     recv.join();

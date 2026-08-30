@@ -26,6 +26,13 @@ public:
 
     void EqSel(std::vector<block> &u0, std::vector<block> &v0, std::vector<block> &res0, u64 len);
 
+    void EqConstant(
+        std::vector<block> &u0,
+        std::vector<block> &v0,
+        std::vector<block> &res0,
+        u64 len,
+        block constant);
+
     void EqSel(std::vector<block> &u0, std::vector<u64> &v0, std::vector<u64> &res0, u64 len);
 
     void EqSel(std::vector<block> &u0, std::vector<block> &res0, u64 len);
@@ -49,6 +56,13 @@ public:
     BitVector Mux(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1);
 
     void EqSel(std::vector<block> &u1, std::vector<block> &v1, std::vector<block> &res1, u64 len);
+
+    void EqConstant(
+        std::vector<block> &u1,
+        std::vector<block> &v1,
+        std::vector<block> &res1,
+        u64 len,
+        block constant);
     void EqSel(std::vector<block> &u1, std::vector<u64> &v1, std::vector<u64> &res1, u64 len);
 
     void EqSel(std::vector<block> &u0, std::vector<block> &res0, u64 len);
@@ -72,6 +86,18 @@ void runEqSel(
     std::vector<block> &sendResults,
     std::vector<block> &recvResults,
     u64 len,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse = false);
+
+void runEqConstant(
+    std::vector<block> &sendSelectors,
+    std::vector<block> &recvSelectors,
+    std::vector<block> &sendValues,
+    std::vector<block> &recvValues,
+    std::vector<block> &sendResults,
+    std::vector<block> &recvResults,
+    u64 len,
+    block constant,
     std::array<coproto::AsioSocket, 2> &sockets,
     bool roleInverse = false);
 
