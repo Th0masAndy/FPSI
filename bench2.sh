@@ -9,18 +9,40 @@ metrics=(0 1 2)
 
 printf "[ProType]  [Assumption]   [Metric] [Dim] [Delta] [Size] [Com.(MB)] [Time(s)]\n"
 
-for nn in "${ns[@]}"; do
-  for dim in "${dims[@]}"; do
-    for delta in "${deltas[@]}"; do
-      for metric in "${metrics[@]}"; do
+# Normal
+for metric in "${metrics[@]}"; do
+  for nn in "${ns[@]}"; do
+    for dim in "${dims[@]}"; do
+      for delta in "${deltas[@]}"; do
         ./build/fpsi -type 0 -assumption 0 -p "$metric" -nn "$nn" \
           -d "$dim" -delta "$delta" -inter 4 -try 1
+      done
+      echo
+    done
+  done
+done
+
+# Prefix
+for metric in "${metrics[@]}"; do
+  for nn in "${ns[@]}"; do
+    for dim in "${dims[@]}"; do
+      for delta in "${deltas[@]}"; do
         ./build/fpsi -type 0 -assumption 0 -prefix -p "$metric" -nn "$nn" \
           -d "$dim" -delta "$delta" -inter 4 -try 1
+      done
+      echo
+    done
+  done
+done
+
+# Sender
+for metric in "${metrics[@]}"; do
+  for nn in "${ns[@]}"; do
+    for dim in "${dims[@]}"; do
+      for delta in "${deltas[@]}"; do
         ./build/fpsi -type 0 -assumption 0 -sender -p "$metric" -nn "$nn" \
           -d "$dim" -delta "$delta" -inter 4 -try 1
       done
-
       echo
     done
   done
