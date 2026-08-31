@@ -13,6 +13,8 @@ install_manifest.txt
 compile_commands.json
 test/log
 build
+/bench-results/
+/core.*
 # Compiled Object files
 *.slo
 *.lo

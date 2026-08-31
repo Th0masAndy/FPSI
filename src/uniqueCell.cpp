@@ -28,6 +28,10 @@ using namespace oc;
 
 namespace {
 
+// Keeps the measured n=2^16, d=6, delta=512 L2 peak below 256 GiB
+// while limiting the maximum configuration to four batches.
+constexpr u64 kPrefixBatchPoints = 1ULL << 14;
+
 struct PrefixDistanceInput {
     SoOpprfInput soOpprf;
     std::vector<u64> localOffsets;
@@ -40,10 +44,8 @@ struct SplitShares {
 };
 
 struct SelectedPrefixShares {
-    std::vector<block> sendAlpha;
-    std::vector<block> recvAlpha;
-    std::vector<block> sendOffset;
-    std::vector<block> recvOffset;
+    std::vector<block> sendShares;
+    std::vector<block> recvShares;
 };
 
 const std::vector<u64> &prefixLensFor(int delta)
@@ -323,39 +325,45 @@ SplitShares splitShares(const std::vector<block> &shares)
 }
 
 SelectedPrefixShares selectPrefixShares(
-    SplitShares &sendSplit,
-    SplitShares &recvSplit,
+    const std::vector<block> &sendShares,
+    const std::vector<block> &recvShares,
     const std::vector<u64> &localOffsets,
+    u64 candidateBegin,
+    u64 candidateCount,
     u64 groupSize,
     u64 fallbackDistance,
     std::array<coproto::AsioSocket, 2> &sockets)
 {
-    const u64 candidateCount = sendSplit.highShares.size();
-    if (candidateCount != recvSplit.highShares.size()
-        || candidateCount != sendSplit.lowShares.size()
-        || candidateCount != recvSplit.lowShares.size()
-        || candidateCount != localOffsets.size()
+    const u64 shareCount = sendShares.size();
+    if (shareCount != recvShares.size()
+        || shareCount != localOffsets.size()
+        || candidateBegin > shareCount
+        || candidateCount > shareCount - candidateBegin
         || groupSize == 0
         || candidateCount % groupSize != 0) {
         throw std::runtime_error(
             "uniqueCell prefix selection size mismatch");
     }
 
+    std::vector<block> sendSelectors(candidateCount);
+    std::vector<block> recvSelectors(candidateCount);
     std::vector<block> sendValues(candidateCount);
     std::vector<block> recvValues(candidateCount);
     for (u64 i = 0; i < candidateCount; ++i) {
+        const u64 sourceIndex = candidateBegin + i;
+        sendSelectors[i] = block(0, high(sendShares[sourceIndex]));
+        recvSelectors[i] = block(0, high(recvShares[sourceIndex]));
         sendValues[i] = block(
-            low(sendSplit.lowShares[i]), localOffsets[i]);
-        recvValues[i] = block(
-            low(recvSplit.lowShares[i]), 0);
+            low(sendShares[sourceIndex]), localOffsets[sourceIndex]);
+        recvValues[i] = block(low(recvShares[sourceIndex]), 0);
     }
 
     const u64 selectedCount = candidateCount / groupSize;
     std::vector<block> sendSelected(selectedCount);
     std::vector<block> recvSelected(selectedCount);
     runEqConstant(
-        sendSplit.highShares,
-        recvSplit.highShares,
+        sendSelectors,
+        recvSelectors,
         sendValues,
         recvValues,
         sendSelected,
@@ -364,19 +372,10 @@ SelectedPrefixShares selectPrefixShares(
         block(fallbackDistance, 0),
         sockets);
 
-    SelectedPrefixShares result {
-        std::vector<block>(selectedCount),
-        std::vector<block>(selectedCount),
-        std::vector<block>(selectedCount),
-        std::vector<block>(selectedCount),
+    return {
+        std::move(sendSelected),
+        std::move(recvSelected),
     };
-    for (u64 i = 0; i < selectedCount; ++i) {
-        result.sendAlpha[i] = block(0, high(sendSelected[i]));
-        result.recvAlpha[i] = block(0, high(recvSelected[i]));
-        result.sendOffset[i] = block(0, low(sendSelected[i]));
-        result.recvOffset[i] = block(0, low(recvSelected[i]));
-    }
-    return result;
 }
 
 std::vector<block> xorDimensions(
@@ -439,6 +438,125 @@ std::vector<u8> makeChoiceBits(
         choiceBits[index] = 1;
     }
     return choiceBits;
+}
+
+std::vector<u8> runPrefixLpBatch(
+    const std::vector<block> &sendShares,
+    const std::vector<block> &recvShares,
+    const std::vector<u64> &localOffsets,
+    u64 pointBegin,
+    u64 pointCount,
+    std::size_t dimension,
+    u64 cellCount,
+    u64 groupSize,
+    int metric,
+    u64 fallbackDistance,
+    u64 deltaPow,
+    u64 intervalPrefixLen,
+    std::array<coproto::AsioSocket, 2> &sockets)
+{
+    const u64 candidatesPerPoint =
+        dimension * cellCount * groupSize;
+    const u64 candidateBegin =
+        pointBegin * candidatesPerPoint;
+    const u64 candidateCount =
+        pointCount * candidatesPerPoint;
+    const u64 selectedCount =
+        pointCount * dimension * cellCount;
+
+    std::vector<u64> sendRho(selectedCount);
+    std::vector<u64> recvRho(selectedCount);
+    {
+        std::vector<block> sendBooleanShares(2 * selectedCount);
+        std::vector<block> recvBooleanShares(2 * selectedCount);
+        {
+            auto selected = selectPrefixShares(
+                sendShares,
+                recvShares,
+                localOffsets,
+                candidateBegin,
+                candidateCount,
+                groupSize,
+                fallbackDistance,
+                sockets);
+            if (selected.sendShares.size() != selectedCount
+                || selected.recvShares.size() != selectedCount) {
+                throw std::runtime_error(
+                    "uniqueCell prefix batch output size mismatch");
+            }
+
+            for (u64 i = 0; i < selectedCount; ++i) {
+                sendBooleanShares[i] =
+                    block(0, high(selected.sendShares[i]));
+                sendBooleanShares[selectedCount + i] =
+                    block(0, low(selected.sendShares[i]));
+                recvBooleanShares[i] =
+                    block(0, high(selected.recvShares[i]));
+                recvBooleanShares[selectedCount + i] =
+                    block(0, low(selected.recvShares[i]));
+            }
+        }
+
+        std::vector<u64> sendArithShares(2 * selectedCount);
+        std::vector<u64> recvArithShares(2 * selectedCount);
+        runB2a(
+            sendBooleanShares,
+            recvBooleanShares,
+            sendArithShares,
+            recvArithShares,
+            sockets);
+
+        for (u64 i = 0; i < selectedCount; ++i) {
+            sendRho[i] =
+                sendArithShares[i]
+                + sendArithShares[selectedCount + i];
+            recvRho[i] =
+                recvArithShares[i]
+                + recvArithShares[selectedCount + i];
+        }
+    }
+
+    if (metric != 1) {
+        std::vector<u64> sendProducts(selectedCount);
+        std::vector<u64> recvProducts(selectedCount);
+        runMul(
+            sendRho,
+            recvRho,
+            sendProducts,
+            recvProducts,
+            sockets);
+        for (u64 i = 0; i < selectedCount; ++i) {
+            sendRho[i] =
+                sendRho[i] * sendRho[i]
+                + 2 * sendProducts[i];
+            recvRho[i] =
+                recvRho[i] * recvRho[i]
+                + 2 * recvProducts[i];
+        }
+    }
+
+    auto sendDis = sumDimensions(
+        sendRho,
+        pointCount,
+        dimension,
+        cellCount);
+    auto recvDis = sumDimensions(
+        recvRho,
+        pointCount,
+        dimension,
+        cellCount);
+    std::vector<u64> matches;
+    runIntervalTest(
+        sendDis,
+        recvDis,
+        deltaPow,
+        intervalPrefixLen,
+        matches,
+        sockets);
+    return makeChoiceBits(
+        pointCount,
+        matches,
+        cellCount * intervalPrefixLen);
 }
 
 std::vector<block> runMuxReveal(
@@ -735,7 +853,7 @@ void runSenderProtocol(const FpsiConfig &config)
                 recvDis,
                 sendSeedShares,
                 recvSeedShares,
-                integerPow(config.delta, config.metric),
+                integerPow(config.delta, config.metric) + 1,
                 sockets);
             timer.setTimePoint("CmpRand done");
         }
@@ -819,260 +937,33 @@ void fuzzyPsiUniqueCellPxLp(const FpsiConfig &config)
             true);
         timer.setTimePoint("OPPRF done");
 
-        auto sendSplit = splitShares(sendShares);
-        auto recvSplit = splitShares(recvShares);
-        std::vector<u64> sendArithShares(sendShares.size());
-        std::vector<u64> recvArithShares(recvShares.size());
-        runB2a(
-            sendSplit.lowShares,
-            recvSplit.lowShares,
-            sendArithShares,
-            recvArithShares,
-            sockets);
-        timer.setTimePoint("B2A done");
-
-        std::vector<u64> sendDisShares(sendShares.size());
-        std::vector<u64> recvDisShares(recvShares.size());
-        if (config.metric == 1) {
-            for (u64 i = 0; i < sendShares.size(); ++i) {
-                sendDisShares[i] =
-                    sendArithShares[i] + input.localOffsets[i];
-                recvDisShares[i] = recvArithShares[i];
-            }
-        } else {
-            for (u64 i = 0; i < sendShares.size(); ++i) {
-                sendArithShares[i] += input.localOffsets[i];
-            }
-            std::vector<u64> sendProducts(sendShares.size());
-            std::vector<u64> recvProducts(recvShares.size());
-            runMul(
-                sendArithShares,
-                recvArithShares,
-                sendProducts,
-                recvProducts,
+        std::vector<u8> choiceBits(config.n, 0);
+        for (u64 pointBegin = 0;
+             pointBegin < config.n;
+             pointBegin += kPrefixBatchPoints) {
+            const u64 pointCount = std::min(
+                kPrefixBatchPoints,
+                config.n - pointBegin);
+            auto batchChoiceBits = runPrefixLpBatch(
+                sendShares,
+                recvShares,
+                input.localOffsets,
+                pointBegin,
+                pointCount,
+                config.dimension,
+                cellCount,
+                input.groupSize,
+                config.metric,
+                config.delta + 1,
+                deltaPow,
+                intervalPrefixLen,
                 sockets);
-            for (u64 i = 0; i < sendShares.size(); ++i) {
-                sendDisShares[i] =
-                    sendArithShares[i] * sendArithShares[i]
-                    + 2 * sendProducts[i];
-                recvDisShares[i] =
-                    recvArithShares[i] * recvArithShares[i]
-                    + 2 * recvProducts[i];
-            }
-            timer.setTimePoint("Mul done");
+            std::copy(
+                batchChoiceBits.begin(),
+                batchChoiceBits.end(),
+                choiceBits.begin() + pointBegin);
         }
-
-        std::vector<u64> sendSelected(
-            config.n * config.dimension * cellCount);
-        std::vector<u64> recvSelected(
-            config.n * config.dimension * cellCount);
-        runEqSel(
-            sendSplit.highShares,
-            recvSplit.highShares,
-            sendDisShares,
-            recvDisShares,
-            sendSelected,
-            recvSelected,
-            input.groupSize,
-            sockets);
-        timer.setTimePoint("Mux done");
-
-        auto sendDis = sumDimensions(
-            sendSelected,
-            config.n,
-            config.dimension,
-            cellCount);
-        auto recvDis = sumDimensions(
-            recvSelected,
-            config.n,
-            config.dimension,
-            cellCount);
-        std::vector<u64> matches;
-        runIntervalTest(
-            sendDis,
-            recvDis,
-            deltaPow,
-            intervalPrefixLen,
-            matches,
-            sockets);
-        auto choiceBits = makeChoiceBits(
-            config.n,
-            matches,
-            cellCount * intervalPrefixLen);
-        timer.setTimePoint("Interval test done");
-
-        std::vector<std::vector<block>> transferredElements;
-        transferElements(
-            sendSet, choiceBits, transferredElements, sockets);
-        if (config.verbose) {
-            correctCheck(choiceBits, expectedIndices);
-        }
-    }
-
-    auto end = timer.setTimePoint("OT done");
-    if (config.verbose) {
-        std::cout << timer << std::endl;
-    }
-    const double comm =
-        (sockets[0].bytesReceived() + sockets[0].bytesSent())
-        / 1024.0 / 1024.0 / config.trials;
-    const double comp =
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            end - preprocessingDone)
-            .count()
-        / double(1000 * 1000) / config.trials;
-    printFpsiResult(
-        "prefix", "recv", "uniqCel", config.metric,
-        config.dimension, config.delta, config.n, comm, comp);
-}
-
-void fuzzyPsiUniqueCellPxLpOpt(const FpsiConfig &config)
-{
-    const auto &prefixLens = prefixLensFor(config.delta);
-    const u64 encodedPrefixCount =
-        encodedPrefixCountFor(config.delta);
-    const u64 cellCount = 1ULL << config.dimension;
-
-    PRNG dataPrng(sysRandomSeed());
-    auto testCase = generateFpsiTestCase(
-        config, dataPrng);
-    const auto &sendSet = testCase.sendSet;
-    const auto &recvSet = testCase.recvSet;
-    const auto &expectedIndices = testCase.expectedOutputIndices;
-
-    oc::Timer timer;
-    timer.setTimePoint("begin");
-    auto input = makePrefixDistanceInput(
-        sendSet,
-        recvSet,
-        config.n,
-        config.dimension,
-        config.delta,
-        prefixLens,
-        encodedPrefixCount);
-    auto sockets = coproto::AsioSocket::makePair();
-    auto preprocessingDone = timer.setTimePoint("preprocess done");
-
-    const u64 deltaPow =
-        integerPow(config.delta, config.metric);
-    const u64 intervalPrefixLen = static_cast<u64>(
-        std::ceil(std::log2(deltaPow + 1)));
-
-    for (int trial = 0; trial < config.trials; ++trial) {
-        std::vector<block> sendShares(
-            input.soOpprf.queryKeys.size());
-        std::vector<block> recvShares(
-            input.soOpprf.queryKeys.size());
-        runSoOpprf(
-            input.soOpprf.keys,
-            input.soOpprf.values,
-            input.soOpprf.queryKeys,
-            recvShares,
-            sendShares,
-            sockets,
-            true);
-        timer.setTimePoint("OPPRF done");
-
-        auto sendSplit = splitShares(sendShares);
-        auto recvSplit = splitShares(recvShares);
-        auto selected = selectPrefixShares(
-            sendSplit,
-            recvSplit,
-            input.localOffsets,
-            input.groupSize,
-            config.delta + 1,
-            sockets);
-        timer.setTimePoint("EqConstant done");
-
-        const u64 selectedCount = selected.sendAlpha.size();
-        std::vector<block> sendBooleanShares(2 * selectedCount);
-        std::vector<block> recvBooleanShares(2 * selectedCount);
-        std::copy(
-            selected.sendAlpha.begin(),
-            selected.sendAlpha.end(),
-            sendBooleanShares.begin());
-        std::copy(
-            selected.sendOffset.begin(),
-            selected.sendOffset.end(),
-            sendBooleanShares.begin() + selectedCount);
-        std::copy(
-            selected.recvAlpha.begin(),
-            selected.recvAlpha.end(),
-            recvBooleanShares.begin());
-        std::copy(
-            selected.recvOffset.begin(),
-            selected.recvOffset.end(),
-            recvBooleanShares.begin() + selectedCount);
-
-        std::vector<u64> sendArithShares(2 * selectedCount);
-        std::vector<u64> recvArithShares(2 * selectedCount);
-        runB2a(
-            sendBooleanShares,
-            recvBooleanShares,
-            sendArithShares,
-            recvArithShares,
-            sockets);
-
-        std::vector<u64> sendRho(selectedCount);
-        std::vector<u64> recvRho(selectedCount);
-        for (u64 i = 0; i < selectedCount; ++i) {
-            sendRho[i] =
-                sendArithShares[i]
-                + sendArithShares[selectedCount + i];
-            recvRho[i] =
-                recvArithShares[i]
-                + recvArithShares[selectedCount + i];
-        }
-        timer.setTimePoint("B2A done");
-
-        std::vector<u64> sendSelected(selectedCount);
-        std::vector<u64> recvSelected(selectedCount);
-        if (config.metric == 1) {
-            sendSelected = std::move(sendRho);
-            recvSelected = std::move(recvRho);
-        } else {
-            std::vector<u64> sendProducts(selectedCount);
-            std::vector<u64> recvProducts(selectedCount);
-            runMul(
-                sendRho,
-                recvRho,
-                sendProducts,
-                recvProducts,
-                sockets);
-            for (u64 i = 0; i < selectedCount; ++i) {
-                sendSelected[i] =
-                    sendRho[i] * sendRho[i]
-                    + 2 * sendProducts[i];
-                recvSelected[i] =
-                    recvRho[i] * recvRho[i]
-                    + 2 * recvProducts[i];
-            }
-            timer.setTimePoint("Mul done");
-        }
-
-        auto sendDis = sumDimensions(
-            sendSelected,
-            config.n,
-            config.dimension,
-            cellCount);
-        auto recvDis = sumDimensions(
-            recvSelected,
-            config.n,
-            config.dimension,
-            cellCount);
-        std::vector<u64> matches;
-        runIntervalTest(
-            sendDis,
-            recvDis,
-            deltaPow,
-            intervalPrefixLen,
-            matches,
-            sockets);
-        auto choiceBits = makeChoiceBits(
-            config.n,
-            matches,
-            cellCount * intervalPrefixLen);
-        timer.setTimePoint("Interval test done");
+        timer.setTimePoint("Distance batches done");
 
         std::vector<std::vector<block>> transferredElements;
         transferElements(

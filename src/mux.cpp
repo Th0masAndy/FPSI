@@ -124,18 +124,23 @@ BitVector MuxSender::CmpRand(std::vector<u64> &u0, std::vector<block> &v0, std::
     auto curr_comm = socket->bytesReceived() + socket->bytesSent();
 
     BitVector b0(num);
-    std::vector<u8> res(num);
-    std::vector<u64> uu0(num);
+    std::vector<u8> res(2 * num);
+    std::vector<u64> inputs(2 * num);
 
     for (u64 i = 0; i < num; i++) {
-        uu0[i] = threshold + (0ULL - u0[i]);
+        inputs[i] = threshold - u0[i];
+        inputs[num + i] = 0ULL - u0[i];
     }
 
-    MillionaireProtocolSender cmp(num, 64);
-    cmp.compare(res.data(), uu0.data(), *socket);
+    MillionaireProtocolSender cmp(2 * num, 64);
+    cmp.compare(res.data(), inputs.data(), *socket);
 
     for (u64 i = 0; i < num; i++) {
-        b0[i] = res[i] & 1;
+        const bool localCorrection = threshold != 0
+            && ((u0[i] < threshold) ^ (u0[i] == 0));
+        b0[i] = (res[i] ^ res[num + i]
+                    ^ static_cast<u8>(localCorrection))
+            & 1;
     }
 
     coproto::sync_wait(sender->genSilentBaseOts(*prng, *socket));
@@ -388,14 +393,18 @@ BitVector MuxRecver::Mux(std::vector<block> &u1, std::vector<block> &v1, std::ve
 BitVector MuxRecver::CmpRand(std::vector<u64> &u1, std::vector<block> &v1, std::vector<block> &res1)
 {
     BitVector b1(num);
-    // ssPEQT(0, u1, b1, *socket, 1);
 
-    std::vector<u8> res(num);
-    MillionaireProtocolRecver cmp(num, 64);
-    cmp.compare(res.data(), u1.data(), *socket);
+    std::vector<u8> res(2 * num);
+    std::vector<u64> inputs(2 * num);
+    for (u64 i = 0; i < num; ++i) {
+        inputs[i] = u1[i];
+        inputs[num + i] = u1[i];
+    }
+    MillionaireProtocolRecver cmp(2 * num, 64);
+    cmp.compare(res.data(), inputs.data(), *socket);
 
     for (u64 i = 0; i < num; i++) {
-        b1[i] = res[i] & 1;
+        b1[i] = (res[i] ^ res[num + i]) & 1;
     }
 
     coproto::sync_wait(recver->genSilentBaseOts(*prng, *socket));

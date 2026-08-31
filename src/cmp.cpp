@@ -52,7 +52,7 @@
 
 void NcoOTSender::send(u8 **messages, Socket &chl)
 {
-    // coproto::sync_wait(mOt->genSilentBaseOts(*prng, chl));
+    coproto::sync_wait(mOt->genSilentBaseOts(*prng, chl));
 
     std::vector<std::array<block, 2>> otMessages(mNum * 4);
 
@@ -78,7 +78,7 @@ void NcoOTSender::send(u8 **messages, Socket &chl)
 
 void NcoOTRecver::recv(u8 *outs, u8 *choices, Socket &chl)
 {
-    // coproto::sync_wait(mOt->genSilentBaseOts(*prng, chl));
+    coproto::sync_wait(mOt->genSilentBaseOts(*prng, chl));
 
     std::vector<block> otMessages(mNum * 4);
 
@@ -346,6 +346,7 @@ void MillionaireProtocolSender::traverse_and_compute_ANDs(
             coproto::sync_wait(chl.send(oc::span<u8>(ei + offset_corr, size_corr)));
             coproto::sync_wait(chl.send(oc::span<u8>(fi + offset_std, size_std)));
             coproto::sync_wait(chl.send(oc::span<u8>(fi + offset_corr, size_corr)));
+            coproto::sync_wait(chl.flush());
 
             coproto::sync_wait(chl.recv(oc::span<u8>(e + offset_std, size_std)));
             coproto::sync_wait(chl.recv(oc::span<u8>(e + offset_corr, size_corr)));
@@ -354,6 +355,7 @@ void MillionaireProtocolSender::traverse_and_compute_ANDs(
         } else {
             coproto::sync_wait(chl.send(oc::span<u8>(ei + offset_std, size_std)));
             coproto::sync_wait(chl.send(oc::span<u8>(fi + offset_std, size_std)));
+            coproto::sync_wait(chl.flush());
 
             coproto::sync_wait(chl.recv(oc::span<u8>(e + offset_std, size_std)));
             coproto::sync_wait(chl.recv(oc::span<u8>(f + offset_std, size_std)));
@@ -724,12 +726,14 @@ void MillionaireProtocolRecver::traverse_and_compute_ANDs(
             coproto::sync_wait(chl.send(oc::span<u8>(ei + offset_corr, size_corr)));
             coproto::sync_wait(chl.send(oc::span<u8>(fi + offset_std, size_std)));
             coproto::sync_wait(chl.send(oc::span<u8>(fi + offset_corr, size_corr)));
+            coproto::sync_wait(chl.flush());
         } else {
             coproto::sync_wait(chl.recv(oc::span<u8>(e + offset_std, size_std)));
             coproto::sync_wait(chl.recv(oc::span<u8>(f + offset_std, size_std)));
 
             coproto::sync_wait(chl.send(oc::span<u8>(ei + offset_std, size_std)));
             coproto::sync_wait(chl.send(oc::span<u8>(fi + offset_std, size_std)));
+            coproto::sync_wait(chl.flush());
         }
         for (int i = 0; i < size_std; i++) {
             e[i + offset_std] ^= ei[i + offset_std];

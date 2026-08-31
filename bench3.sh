@@ -13,14 +13,11 @@ for nn in "${ns[@]}"; do
   for dim in "${dims[@]}"; do
     for delta in "${deltas[@]}"; do
       for metric in "${metrics[@]}"; do
-        ./build/fpsi -type 0 -assumption 0 -p "$metric" -nn "$nn" \
+        ./build/fpsi -type 0 -assumption 1 -p "$metric" -nn "$nn" \
           -d "$dim" -delta "$delta" -inter 4 -try 1
-        ./build/fpsi -type 0 -assumption 0 -prefix -p "$metric" -nn "$nn" \
-          -d "$dim" -delta "$delta" -inter 4 -try 1
-        ./build/fpsi -type 0 -assumption 0 -sender -p "$metric" -nn "$nn" \
+        ./build/fpsi -type 0 -assumption 1 -prefix -p "$metric" -nn "$nn" \
           -d "$dim" -delta "$delta" -inter 4 -try 1
       done
-
       echo
     done
   done

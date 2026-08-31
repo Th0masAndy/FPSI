@@ -20,6 +20,12 @@
 #include "protocol.h"
 #include "utils.h"
 
+// Memory optimization:
+// Normal uniqueBlock may produce more than 2^31 programmed KVs, so they should
+// not be encoded by one OKVS instance. Hash cells with a public seed, generate
+// and encode fixed-capacity shards sequentially, and equally pad every shard to
+// hide its distribution.
+
 using namespace oc;
 
 namespace {
