@@ -28,7 +28,6 @@ void printHelp(const char *program)
         << "  -inter <integer>   planted intersection size\n"
         << "  -try <integer>     number of benchmark runs (default: 1)\n"
         << "  -v <0|1>           verbose output (default: 0)\n"
-        << "  -s <integer>       prefix shift (default: 0)\n"
         << "  -h, --help         show this help and exit\n";
 }
 

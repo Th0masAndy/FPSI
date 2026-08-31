@@ -501,7 +501,6 @@ void fuzzyPsiLp(const FpsiConfig &config)
     printFpsiResult("normal", "both", "disJoin", lp, d, delta, n, comm, comp);
 
 }
-int shift = 1; // modify prefixLen by shift
 
 // to be fixed
 void LocalMapPrefix(PointSet &inputs, std::vector<block> &pid, std::vector<block> &listKey, std::vector<block> &listVal, int delta)
@@ -811,7 +810,6 @@ void fuzzyPsiPrefixL0(const FpsiConfig &config)
     const bool verbose = config.verbose;
     const int numTry = config.trials;
 
-    shift = config.prefixShift;
     auto prefixLengths = prefixLenMap.at(2 * delta);
     const int prefixCount = prefixNumMap.at(2 * delta);
 
@@ -927,7 +925,6 @@ void fuzzyPsiPrefixLp(const FpsiConfig &config)
     const bool verbose = config.verbose;
     const int numTry = config.trials;
 
-    shift = config.prefixShift;
     auto mapPrefixLengths = prefixLenMap.at(2 * delta);
     const int mapPrefixCount = prefixNumMap.at(2 * delta);
     auto filterPrefixLengths = prefixLenMap.at(delta);

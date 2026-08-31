@@ -10,6 +10,5 @@ FpsiConfig FpsiConfig::fromCommandLine(const oc::CLP &cmd)
         .intersectionSize = cmd.getOr("inter", 4ull),
         .trials = cmd.getOr("try", 1),
         .verbose = cmd.getOr("v", 0) != 0,
-        .prefixShift = cmd.getOr("s", 0),
     };
 }

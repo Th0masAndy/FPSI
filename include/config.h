@@ -12,7 +12,6 @@ struct FpsiConfig {
     oc::u64 intersectionSize;
     int trials;
     bool verbose;
-    int prefixShift;
 
     static FpsiConfig fromCommandLine(const oc::CLP &cmd);
 };

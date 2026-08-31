@@ -9,7 +9,7 @@ FPSI implements fuzzy matching for two private sets. It includes the two-sided a
 - Linux on **AMD64** Only
 - `cmake`, `make`, `g++ 13`
 - Docker (optional, for isolated builds)
-- Additional third-party libraries [secure-join](https://github.com/Visa-Research/secure-join.git) and [volePSI](https://github.com/ladnir/volepsi.git) (can be installed by the script [build.sh](./build.sh))
+- Additional third-party libraries [secure-join](https://github.com/ladnir/secure-join) and [volePSI](https://github.com/ladnir/volepsi) (can be installed by the script [build.sh](./build.sh))
 
 
 - **Dependencies :**
@@ -71,10 +71,9 @@ All command-line option names are lowercase. Run the built-in help for the compl
 | `-nn` | log2 of input set size | default `10`; tested values: `8`–`16` |
 | `-d` | Dimension | integer, default `2` |
 | `-delta` | Distance threshold | integer, default `2` |
-| `-inter` | Planted intersection size | integer |
+| `-inter` | Intersection size | integer |
 | `-try` | Number of benchmark runs | integer, default `1` |
 | `-v` | Verbose output | `0`: off (default), `1`: on |
-| `-s` | Prefix shift | integer, default `0` |
 | `-h`, `--help` | Help | print options and exit |
 
 ## Usage Examples
@@ -103,28 +102,36 @@ Enable prefix optimization:
 
 The following baseline implementations are used for comparison.
 
-### Gao et al. 
-[Code](https://github.com/ql70ql70/Fuzzy-Private-Set-Intersection-from-Fuzzy-Mapping) |   [Paper](https://eprint.iacr.org/2024/1462)
+------------------------------------------------------------------------
 
-Recommended Docker image:
+### van Baarsen and Pu (EUROCRYPT 2024)
 
-    blueobsidian/gao_artifact:latest
+[Code](https://github.com/sihangpu/fuzzy_PSI) | [Paper](https://eprint.iacr.org/2024/330)
 
 ------------------------------------------------------------------------
 
-### Dang et al.
+### Gao et al. (ASIACRYPT 2024)
+
+[Code](https://github.com/ql70ql70/Fuzzy-Private-Set-Intersection-from-Fuzzy-Mapping) |   [Paper](https://eprint.iacr.org/2024/1462)
+
+------------------------------------------------------------------------
+
+### Dang et al. (CCS 2025)
 
 [Code](https://github.com/zhouxv/ourFuzzyPSI-C) | [Paper](https://eprint.iacr.org/2025/1796)
 
-Recommended Docker image:
-
-    blueobsidian/fpsi_artifact:latest
-
 ------------------------------------------------------------------------
+
+### Bui et al. (ASIACRYPT 2025)
+
+[Code](https://github.com/phuocchubeo123/SaPSI) | [Paper](https://eprint.iacr.org/2025/907.pdf)
+
+
 
 ## Acknowledgements
 Parts of this codebase (for prefix optimization) are adapted from [zhouxv/ourFuzzyPSI-C](https://github.com/zhouxv/ourFuzzyPSI-C)
 
+We also thank Peter Rindal for the open-source [secure-join](https://github.com/ladnir/secure-join) and [volePSI](https://github.com/ladnir/volepsi) libraries used by this project.
 
 ## Citation
 
