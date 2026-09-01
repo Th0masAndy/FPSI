@@ -7,6 +7,7 @@
 #include <cryptoTools/Common/Timer.h>
 #include <cryptoTools/Common/block.h>
 #include <cryptoTools/Crypto/PRNG.h>
+#include <stdexcept>
 #include <sys/types.h>
 #include <thread>
 #include <vector>
@@ -15,6 +16,7 @@
 #include <volePSI/GMW/Gmw.h>
 #include <volePSI/Paxos.h>
 #include <volePSI/config.h>
+#include "common.h"
 #include "cmp.h"
 #include "utils.h"
 
@@ -116,6 +118,24 @@ BitVector MuxSender::Mux(std::vector<block> &u0, std::vector<block> &v0, std::ve
         std::cout << "Mux comm: " << (end_comm - curr_comm) / 1024.0 / 1024.0 << " MB " << std::endl;
     }
 
+    return b0;
+}
+
+BitVector MuxSender::EqRand(
+    std::vector<block> &u0,
+    std::vector<block> &v0,
+    std::vector<block> &res0)
+{
+    PRNG randomPrng(sysRandomSeed());
+    std::vector<block> maskedValues(v0.size());
+    randomPrng.get(maskedValues.data(), maskedValues.size());
+    for (u64 i = 0; i < maskedValues.size(); ++i) {
+        maskedValues[i] ^= v0[i];
+    }
+    auto b0 = Mux(u0, maskedValues, res0);
+    for (u64 i = 0; i < res0.size(); ++i) {
+        res0[i] ^= maskedValues[i] ^ v0[i];
+    }
     return b0;
 }
 
@@ -390,6 +410,24 @@ BitVector MuxRecver::Mux(std::vector<block> &u1, std::vector<block> &v1, std::ve
     return b1;
 }
 
+BitVector MuxRecver::EqRand(
+    std::vector<block> &u1,
+    std::vector<block> &v1,
+    std::vector<block> &res1)
+{
+    PRNG randomPrng(sysRandomSeed());
+    std::vector<block> maskedValues(v1.size());
+    randomPrng.get(maskedValues.data(), maskedValues.size());
+    for (u64 i = 0; i < maskedValues.size(); ++i) {
+        maskedValues[i] ^= v1[i];
+    }
+    auto b1 = Mux(u1, maskedValues, res1);
+    for (u64 i = 0; i < res1.size(); ++i) {
+        res1[i] ^= maskedValues[i] ^ v1[i];
+    }
+    return b1;
+}
+
 BitVector MuxRecver::CmpRand(std::vector<u64> &u1, std::vector<block> &v1, std::vector<block> &res1)
 {
     BitVector b1(num);
@@ -587,6 +625,89 @@ void MuxRecver::EqSel(std::vector<block> &u1, std::vector<u64> &v1, std::vector<
         }
         res1[i] = res1[i] + low(message[i]) - (b1_sum[i] ? low(messages[i][0]) : low(messages[i][1]));
     }
+}
+
+std::vector<block> runEqRandReveal(
+    std::vector<block> &sendSelectors,
+    std::vector<block> &recvSelectors,
+    std::vector<block> &sendValues,
+    std::vector<block> &recvValues,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    const u64 count = sendSelectors.size();
+    if (recvSelectors.size() != count
+        || sendValues.size() != count
+        || recvValues.size() != count) {
+        throw std::runtime_error("EqRand input size mismatch");
+    }
+
+    const size_t sendSocket = roleInverse ? 1 : 0;
+    const size_t recvSocket = roleInverse ? 0 : 1;
+    std::vector<block> sendResults(count);
+    std::vector<block> recvResults(count);
+
+    std::thread send([&] {
+        MuxSender mux(count, &sockets[sendSocket]);
+        mux.EqRand(sendSelectors, sendValues, sendResults);
+        sendBlocks(sockets[sendSocket], sendResults);
+    });
+    std::thread recv([&] {
+        MuxRecver mux(count, &sockets[recvSocket]);
+        mux.EqRand(recvSelectors, recvValues, recvResults);
+        std::vector<block> remoteResults(count);
+        recvBlocks(sockets[recvSocket], remoteResults);
+        for (u64 i = 0; i < count; ++i) {
+            recvResults[i] ^= remoteResults[i];
+        }
+    });
+    send.join();
+    recv.join();
+    return recvResults;
+}
+
+std::vector<block> runCmpRandReveal(
+    std::vector<u64> &sendInputs,
+    std::vector<u64> &recvInputs,
+    std::vector<block> &sendValues,
+    std::vector<block> &recvValues,
+    u64 threshold,
+    std::array<coproto::AsioSocket, 2> &sockets,
+    bool roleInverse)
+{
+    const u64 count = sendInputs.size();
+    if (recvInputs.size() != count
+        || sendValues.size() != count
+        || recvValues.size() != count) {
+        throw std::runtime_error("CmpRand input size mismatch");
+    }
+
+    const size_t sendSocket = roleInverse ? 1 : 0;
+    const size_t recvSocket = roleInverse ? 0 : 1;
+    std::vector<block> sendResults(count);
+    std::vector<block> recvResults(count);
+
+    std::thread send([&] {
+        MuxSender mux(count, &sockets[sendSocket]);
+        mux.CmpRand(
+            sendInputs,
+            sendValues,
+            sendResults,
+            threshold);
+        sendBlocks(sockets[sendSocket], sendResults);
+    });
+    std::thread recv([&] {
+        MuxRecver mux(count, &sockets[recvSocket]);
+        mux.CmpRand(recvInputs, recvValues, recvResults);
+        std::vector<block> remoteResults(count);
+        recvBlocks(sockets[recvSocket], remoteResults);
+        for (u64 i = 0; i < count; ++i) {
+            recvResults[i] ^= remoteResults[i];
+        }
+    });
+    send.join();
+    recv.join();
+    return recvResults;
 }
 
 void runEqSel(

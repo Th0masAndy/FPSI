@@ -157,11 +157,15 @@ SoOpprfInput makePrefixL0Input(
     std::size_t dimension,
     int delta,
     const std::vector<u64> &prefixLens,
-    u64 encodedPrefixCount)
+    u64 encodedPrefixCount,
+    const std::vector<u64> *seeds = nullptr)
 {
     const u64 cellCount = 1ULL << dimension;
     const u64 prefixLen = prefixLens.size();
     const u64 encodedCount = n * dimension * encodedPrefixCount;
+    if (seeds != nullptr && seeds->size() != n * dimension) {
+        throw std::runtime_error("uniqueCell seed count mismatch");
+    }
 
     SoOpprfInput input;
     input.keys.reserve(encodedCount);
@@ -200,7 +204,9 @@ SoOpprfInput makePrefixL0Input(
                 prefixLens);
             for (const auto &prefix : prefixes) {
                 input.keys.push_back(blake3_hash(cellId, j, prefix));
-                input.values.push_back(ZeroBlock);
+                input.values.push_back(seeds == nullptr
+                        ? ZeroBlock
+                        : block(0, (*seeds)[i * dimension + j]));
             }
         }
     }
@@ -324,6 +330,39 @@ SplitShares splitShares(const std::vector<block> &shares)
     return result;
 }
 
+SelectedPrefixShares selectPrefixSeedShares(
+    const std::vector<block> &sendShares,
+    const std::vector<block> &recvShares,
+    u64 groupSize,
+    std::array<coproto::AsioSocket, 2> &sockets)
+{
+    if (sendShares.size() != recvShares.size()
+        || groupSize == 0
+        || sendShares.size() % groupSize != 0) {
+        throw std::runtime_error(
+            "uniqueCell prefix seed selection size mismatch");
+    }
+
+    auto sendSplit = splitShares(sendShares);
+    auto recvSplit = splitShares(recvShares);
+    const u64 selectedCount = sendShares.size() / groupSize;
+    SelectedPrefixShares selected {
+        std::vector<block>(selectedCount),
+        std::vector<block>(selectedCount),
+    };
+    runEqSel(
+        sendSplit.highShares,
+        recvSplit.highShares,
+        sendSplit.lowShares,
+        recvSplit.lowShares,
+        selected.sendShares,
+        selected.recvShares,
+        groupSize,
+        sockets,
+        true);
+    return selected;
+}
+
 SelectedPrefixShares selectPrefixShares(
     const std::vector<block> &sendShares,
     const std::vector<block> &recvShares,
@@ -398,6 +437,32 @@ std::vector<block> xorDimensions(
             }
         }
     }
+    return result;
+}
+
+std::vector<block> revealBlockSharesToRecv(
+    const std::vector<block> &sendShares,
+    const std::vector<block> &recvShares,
+    std::array<coproto::AsioSocket, 2> &sockets)
+{
+    if (sendShares.size() != recvShares.size()) {
+        throw std::runtime_error(
+            "uniqueCell reveal share count mismatch");
+    }
+
+    auto result = recvShares;
+    std::thread sendParty([&] {
+        sendBlocks(sockets[1], sendShares);
+    });
+    std::thread recvParty([&] {
+        std::vector<block> remoteShares(result.size());
+        recvBlocks(sockets[0], remoteShares);
+        for (u64 i = 0; i < result.size(); ++i) {
+            result[i] ^= remoteShares[i];
+        }
+    });
+    sendParty.join();
+    recvParty.join();
     return result;
 }
 
@@ -559,78 +624,6 @@ std::vector<u8> runPrefixLpBatch(
         cellCount * intervalPrefixLen);
 }
 
-std::vector<block> runMuxReveal(
-    std::vector<block> &sendShares,
-    std::vector<block> &recvShares,
-    std::array<coproto::AsioSocket, 2> &sockets)
-{
-    auto sendSplit = splitShares(sendShares);
-    auto recvSplit = splitShares(recvShares);
-    std::vector<block> sendOutput(sendShares.size());
-    std::vector<block> recvOutput(recvShares.size());
-
-    std::thread send([&] {
-        MuxSender mux(sendShares.size(), &sockets[1]);
-        mux.Mux(
-            sendSplit.highShares,
-            sendSplit.lowShares,
-            sendOutput);
-        sendBlocks(sockets[1], sendOutput);
-    });
-    std::thread recv([&] {
-        MuxRecver mux(recvShares.size(), &sockets[0]);
-        mux.Mux(
-            recvSplit.highShares,
-            recvSplit.lowShares,
-            recvOutput);
-        std::vector<block> remoteOutput(recvOutput.size());
-        recvBlocks(sockets[0], remoteOutput);
-        for (u64 i = 0; i < recvOutput.size(); ++i) {
-            recvOutput[i] ^= remoteOutput[i];
-        }
-    });
-    send.join();
-    recv.join();
-    return recvOutput;
-}
-
-std::vector<block> runCmpRandReveal(
-    std::vector<u64> &sendDis,
-    std::vector<u64> &recvDis,
-    std::vector<block> &sendSeedShares,
-    std::vector<block> &recvSeedShares,
-    u64 threshold,
-    std::array<coproto::AsioSocket, 2> &sockets)
-{
-    std::vector<block> sendOutput(sendDis.size());
-    std::vector<block> recvOutput(recvDis.size());
-
-    std::thread send([&] {
-        MuxSender mux(sendDis.size(), &sockets[1]);
-        mux.CmpRand(
-            sendDis,
-            sendSeedShares,
-            sendOutput,
-            threshold);
-        sendBlocks(sockets[1], sendOutput);
-    });
-    std::thread recv([&] {
-        MuxRecver mux(recvDis.size(), &sockets[0]);
-        mux.CmpRand(
-            recvDis,
-            recvSeedShares,
-            recvOutput);
-        std::vector<block> remoteOutput(recvOutput.size());
-        recvBlocks(sockets[0], remoteOutput);
-        for (u64 i = 0; i < recvOutput.size(); ++i) {
-            recvOutput[i] ^= remoteOutput[i];
-        }
-    });
-    send.join();
-    recv.join();
-    return recvOutput;
-}
-
 PointSet runWeakLablePsi(
     const PointSet &sendSet,
     const std::vector<u64> &seedSums,
@@ -753,11 +746,14 @@ void correctCheckSenderPoints(
               << expectedPoints.size() << " matches found!" << std::endl;
 }
 
-void runSenderProtocol(const FpsiConfig &config)
+void runSenderProtocol(const FpsiConfig &config, bool prefix)
 {
+    if (prefix && config.metric != 0) {
+        throw std::invalid_argument(
+            "uniqueCell sender prefix currently supports only L0");
+    }
+
     const u64 cellCount = 1ULL << config.dimension;
-    const u64 queryCount =
-        config.n * config.dimension * cellCount;
 
     PRNG dataPrng(sysRandomSeed());
     std::vector<u64> seeds(config.n * config.dimension);
@@ -772,14 +768,31 @@ void runSenderProtocol(const FpsiConfig &config)
 
     oc::Timer timer;
     timer.setTimePoint("begin");
-    auto input = makeNormalInput(
-        recvSet,
-        sendSet,
-        config.n,
-        config.dimension,
-        config.delta,
-        config.metric,
-        &seeds);
+    SoOpprfInput input;
+    u64 prefixLen = 0;
+    if (prefix) {
+        const auto &prefixLens = prefixLensFor(2 * config.delta);
+        prefixLen = prefixLens.size();
+        input = makePrefixL0Input(
+            recvSet,
+            sendSet,
+            config.n,
+            config.dimension,
+            config.delta,
+            prefixLens,
+            encodedPrefixCountFor(2 * config.delta),
+            &seeds);
+    } else {
+        input = makeNormalInput(
+            recvSet,
+            sendSet,
+            config.n,
+            config.dimension,
+            config.delta,
+            config.metric,
+            &seeds);
+    }
+    const u64 queryCount = input.queryKeys.size();
     auto sockets = coproto::AsioSocket::makePair();
     auto preprocessingDone = timer.setTimePoint("preprocess done");
 
@@ -797,7 +810,30 @@ void runSenderProtocol(const FpsiConfig &config)
         timer.setTimePoint("OPPRF done");
 
         std::vector<block> recvSeed;
-        if (config.metric == 0) {
+        if (prefix) {
+            auto selected = selectPrefixSeedShares(
+                sendShares,
+                recvShares,
+                prefixLen,
+                sockets);
+            timer.setTimePoint("EqSel done");
+
+            auto sendSeedShares = xorDimensions(
+                selected.sendShares,
+                config.n,
+                config.dimension,
+                cellCount);
+            auto recvSeedShares = xorDimensions(
+                selected.recvShares,
+                config.n,
+                config.dimension,
+                cellCount);
+            recvSeed = revealBlockSharesToRecv(
+                sendSeedShares,
+                recvSeedShares,
+                sockets);
+            timer.setTimePoint("seed reveal done");
+        } else if (config.metric == 0) {
             auto sendAggregated = xorDimensions(
                 sendShares,
                 config.n,
@@ -808,11 +844,16 @@ void runSenderProtocol(const FpsiConfig &config)
                 config.n,
                 config.dimension,
                 cellCount);
-            recvSeed = runMuxReveal(
-                sendAggregated,
-                recvAggregated,
-                sockets);
-            timer.setTimePoint("Mux done");
+            auto sendSplit = splitShares(sendAggregated);
+            auto recvSplit = splitShares(recvAggregated);
+            recvSeed = runEqRandReveal(
+                sendSplit.highShares,
+                recvSplit.highShares,
+                sendSplit.lowShares,
+                recvSplit.lowShares,
+                sockets,
+                true);
+            timer.setTimePoint("EqRand done");
         } else {
             auto sendSplit = splitShares(sendShares);
             auto recvSplit = splitShares(recvShares);
@@ -854,7 +895,8 @@ void runSenderProtocol(const FpsiConfig &config)
                 sendSeedShares,
                 recvSeedShares,
                 integerPow(config.delta, config.metric) + 1,
-                sockets);
+                sockets,
+                true);
             timer.setTimePoint("CmpRand done");
         }
 
@@ -884,7 +926,7 @@ void runSenderProtocol(const FpsiConfig &config)
             .count()
         / double(1000 * 1000) / config.trials;
     printFpsiResult(
-        "normal", "send", "uniqCel", config.metric,
+        prefix ? "prefix" : "normal", "send", "uniqCel", config.metric,
         config.dimension, config.delta, config.n, comm, comp);
 }
 
@@ -1072,12 +1114,17 @@ void fuzzyPsiUniqueCellL0(const FpsiConfig &config)
 
 void fuzzyPsiUniqueCellSenderL0(const FpsiConfig &config)
 {
-    runSenderProtocol(config);
+    runSenderProtocol(config, false);
 }
 
 void fuzzyPsiUniqueCellSenderLp(const FpsiConfig &config)
 {
-    runSenderProtocol(config);
+    runSenderProtocol(config, false);
+}
+
+void fuzzyPsiUniqueCellSenderPxL0(const FpsiConfig &config)
+{
+    runSenderProtocol(config, true);
 }
 
 void fuzzyPsiUniqueCellPxL0(const FpsiConfig &config)

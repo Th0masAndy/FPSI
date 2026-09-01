@@ -9,6 +9,7 @@ void fuzzyPsiUniqueCellPxL0(const FpsiConfig &config);
 void fuzzyPsiUniqueCellPxLp(const FpsiConfig &config);
 void fuzzyPsiUniqueCellSenderL0(const FpsiConfig &config);
 void fuzzyPsiUniqueCellSenderLp(const FpsiConfig &config);
+void fuzzyPsiUniqueCellSenderPxL0(const FpsiConfig &config);
 
 // uniqueBlock
 void fuzzyPsiUniqueBlockL0(const FpsiConfig &config);

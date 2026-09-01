@@ -44,7 +44,14 @@ bool helpRequested(int argc, char **argv)
 
 void runOneSidedSender(const FpsiConfig &config, int assumption, bool prefix)
 {
-    if (assumption != 0 || prefix) {
+    if (assumption != 0) {
+        return;
+    }
+
+    if (prefix) {
+        if (config.metric == 0) {
+            fuzzyPsiUniqueCellSenderPxL0(config);
+        }
         return;
     }
 
